@@ -5,8 +5,10 @@ import {
   SessionRegistry,
   defaultSessionLabel,
   hasActiveSessions,
+  pruneExpiredSessions,
   selectActiveRenderableSessions,
   selectLatestTerminalSession,
+  selectPromotableTerminalSession,
   selectRenderableSessions
 } from '../lib/session-registry.js';
 import { RUN_STATES } from '../lib/constants.js';
@@ -50,11 +52,19 @@ export async function daemonCommand(cliOptions) {
 
   while (true) {
     const now = Date.now();
+    const terminalRetentionMs = Math.max(config.resultHoldMs, config.terminalPromotionMs);
+    const snapshotSessions = registry.listSessions();
+    pruneExpiredSessions(registry, snapshotSessions, {
+      now,
+      activeSessionStaleMs: config.activeSessionStaleMs,
+      terminalRetentionMs
+    });
+
     const sessions = selectRenderableSessions(registry.listSessions(), {
       now,
       rotateMaxSessions: config.rotateMaxSessions,
       activeSessionStaleMs: config.activeSessionStaleMs,
-      terminalSessionTtlMs: config.terminalSessionTtlMs
+      terminalSessionTtlMs: terminalRetentionMs
     });
 
     if (sessions.length === 0) {
@@ -74,6 +84,13 @@ export async function daemonCommand(cliOptions) {
           activeSessionStaleMs: config.activeSessionStaleMs
         })
       : [];
+    const promotedTerminal = active
+      ? selectPromotableTerminalSession(sessions, {
+          now,
+          terminalPromotionMs: config.terminalPromotionMs,
+          displayedSignatureBySession: state.displayedSignatureBySession
+        })
+      : null;
 
     if (!active) {
       const latestTerminal = selectLatestTerminalSession(sessions);
@@ -106,7 +123,7 @@ export async function daemonCommand(cliOptions) {
       continue;
     }
 
-    const target = selectNextSession({ state, sessions: activeSessions, now });
+    const target = selectNextSession({ state, sessions: activeSessions, promotedTerminal, now });
     const signature = `${target.sessionId}:${target.state}:${target.sequenceVersion}`;
     const hasSeenSignature = state.displayedSignatureBySession.get(target.sessionId) === signature;
     const shouldAnimate = !hasSeenSignature;
@@ -128,7 +145,7 @@ export async function daemonCommand(cliOptions) {
       state.currentSlotEndsAt = Date.now() + config.rotateIntervalMs;
     }
 
-    publishStatus({ registry, state, sessions, activeSessions, mode: 'takeover' });
+    publishStatus({ registry, state, sessions, activeSessions, promotedTerminal, mode: 'takeover' });
 
     await sleep(config.rotatorPollMs);
   }
@@ -139,10 +156,14 @@ function resetTakeoverState(state) {
   state.currentSlotEndsAt = 0;
 }
 
-function selectNextSession({ state, sessions, now }) {
+function selectNextSession({ state, sessions, promotedTerminal, now }) {
   if (sessions.length === 1) {
+    const soleSession = sessions[0];
+    if (promotedTerminal && promotedTerminal.sessionId !== soleSession.sessionId) {
+      return promotedTerminal;
+    }
     state.sessionOrderCursor = 0;
-    return sessions[0];
+    return soleSession;
   }
 
   const currentIndex = sessions.findIndex((session) => session.sessionId === state.currentSessionId);
@@ -167,6 +188,10 @@ function selectNextSession({ state, sessions, now }) {
   if (currentChanged) {
     state.sessionOrderCursor = currentIndex;
     return current;
+  }
+
+  if (promotedTerminal && promotedTerminal.sessionId !== current.sessionId) {
+    return promotedTerminal;
   }
 
   if (now < state.currentSlotEndsAt) {
@@ -221,7 +246,7 @@ async function pushSessionFrames({ client, assetStore, config, logger, session, 
   }
 }
 
-function publishStatus({ registry, state, sessions, activeSessions, mode }) {
+function publishStatus({ registry, state, sessions, activeSessions, promotedTerminal, mode }) {
   registry.writeStatus({
     updatedAt: Date.now(),
     mode,
@@ -229,6 +254,7 @@ function publishStatus({ registry, state, sessions, activeSessions, mode }) {
     currentSlotEndsAt: state.currentSlotEndsAt,
     renderableSessionIds: sessions.map((session) => session.sessionId),
     activeSessionIds: activeSessions.map((session) => session.sessionId),
+    promotedTerminalSessionId: promotedTerminal?.sessionId || null,
     lastFingerprint: state.lastFingerprint
   });
 }

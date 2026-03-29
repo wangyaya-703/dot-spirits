@@ -5,6 +5,7 @@ import {
   hasActiveSessions,
   selectActiveRenderableSessions,
   selectLatestTerminalSession,
+  selectPromotableTerminalSession,
   selectRenderableSessions
 } from '../src/lib/session-registry.js';
 
@@ -80,4 +81,19 @@ test('getSessionDisplayName prefers session name over raw id', () => {
     getSessionDisplayName({ sessionId: '99E1', sessionName: null }),
     '99E1'
   );
+});
+
+test('selectPromotableTerminalSession returns only fresh unseen terminal events', () => {
+  const now = 1_000_000;
+  const session = selectPromotableTerminalSession([
+    { sessionId: 'A', state: 'completed', updatedAt: now - 2000, lastStateChangeAt: now - 2000, sequenceVersion: 3 },
+    { sessionId: 'B', state: 'running', updatedAt: now - 1000, lastStateChangeAt: now - 1000, sequenceVersion: 2 },
+    { sessionId: 'C', state: 'failed', updatedAt: now - 500, lastStateChangeAt: now - 500, sequenceVersion: 4 }
+  ], {
+    now,
+    terminalPromotionMs: 5_000,
+    displayedSignatureBySession: new Map([['A', 'A:completed:3']])
+  });
+
+  assert.equal(session.sessionId, 'C');
 });

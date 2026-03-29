@@ -17,6 +17,7 @@ import {
   DEFAULT_RESTORE_DELAY_MS,
   DEFAULT_TERMINAL_SESSION_TTL_MS,
   DEFAULT_ACTIVE_SESSION_STALE_MS,
+  DEFAULT_TERMINAL_PROMOTION_MS,
   DEFAULT_TASK_TYPE
 } from './constants.js';
 
@@ -63,6 +64,7 @@ const configSchema = z.object({
   terminalSessionTtlMs: z.coerce.number().int().min(0).default(DEFAULT_TERMINAL_SESSION_TTL_MS),
   activeSessionStaleMs: z.coerce.number().int().min(1000).default(DEFAULT_ACTIVE_SESSION_STALE_MS),
   resultHoldMs: z.coerce.number().int().min(0).default(DEFAULT_RESULT_HOLD_MS),
+  terminalPromotionMs: z.coerce.number().int().min(0).default(DEFAULT_TERMINAL_PROMOTION_MS),
   logLevel: z.string().min(1).default(DEFAULT_LOG_LEVEL),
   extraWaitingInputPatterns: z.array(z.string()).default([])
 });
@@ -114,6 +116,7 @@ function buildEnvConfig() {
     terminalSessionTtlMs: process.env.DOT_CODEX_TERMINAL_SESSION_TTL_MS,
     activeSessionStaleMs: process.env.DOT_CODEX_ACTIVE_SESSION_STALE_MS,
     resultHoldMs: process.env.DOT_CODEX_RESULT_HOLD_MS,
+    terminalPromotionMs: process.env.DOT_CODEX_TERMINAL_PROMOTION_MS,
     logLevel: process.env.DOT_CODEX_LOG_LEVEL,
     extraWaitingInputPatterns: process.env.DOT_CODEX_WAITING_INPUT_PATTERNS
       ? process.env.DOT_CODEX_WAITING_INPUT_PATTERNS.split(',').map((value) => value.trim()).filter(Boolean)

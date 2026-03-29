@@ -59,10 +59,6 @@ function buildSessionBadge({ sessionId, sessionName }) {
     .toUpperCase();
   const normalizedId = String(sessionId || '').trim().toUpperCase();
 
-  if (normalizedName && normalizedId) {
-    return `${normalizedName.slice(0, 8)}-${normalizedId}`;
-  }
-
   if (normalizedName) {
     return normalizedName.slice(0, 12);
   }

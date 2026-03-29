@@ -46,6 +46,7 @@ program
   .option('--terminal-session-ttl-ms <ms>', 'How long completed/failed sessions stay in the rotation')
   .option('--active-session-stale-ms <ms>', 'How long to keep a live session without heartbeat')
   .option('--result-hold-ms <ms>', 'How long to keep the latest terminal result on screen before releasing takeover')
+  .option('--terminal-promotion-ms <ms>', 'How long a newly completed/failed session is treated as a promotable event')
   .option('--log-level <level>', 'Logger level');
 
 program
@@ -84,6 +85,7 @@ program
 program
   .command('sessions')
   .description('Inspect the current runtime session pool and rotator state')
+  .option('--json', 'Emit machine-readable JSON instead of a table')
   .action(async (_, command) => handleAction(() => import('./commands/sessions.js').then(({ sessionsCommand }) => sessionsCommand(getCombinedOptions(command)))));
 
 program

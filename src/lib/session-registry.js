@@ -65,7 +65,8 @@ export class SessionRegistry {
     cwd,
     pid,
     stateLabel,
-    sessionName
+    sessionName,
+    codexThreadId
   }) {
     const now = Date.now();
     const current = this.readSession(sessionId);
@@ -73,6 +74,7 @@ export class SessionRegistry {
     const payload = {
       sessionId,
       sessionName: sessionName || current?.sessionName || null,
+      codexThreadId: codexThreadId || current?.codexThreadId || null,
       state,
       stateLabel: stateLabel || null,
       command,
@@ -243,6 +245,21 @@ export function selectLatestTerminalSession(sessions) {
     .sort((left, right) => (right.updatedAt || 0) - (left.updatedAt || 0))[0] || null;
 }
 
+export function selectPromotableTerminalSession(sessions, {
+  now = Date.now(),
+  terminalPromotionMs,
+  displayedSignatureBySession = new Map()
+} = {}) {
+  return sessions
+    .filter((session) => TERMINAL_STATES.has(session.state))
+    .filter((session) => now - (session.lastStateChangeAt || session.updatedAt || 0) <= terminalPromotionMs)
+    .filter((session) => {
+      const signature = `${session.sessionId}:${session.state}:${session.sequenceVersion}`;
+      return displayedSignatureBySession.get(session.sessionId) !== signature;
+    })
+    .sort((left, right) => (right.lastStateChangeAt || right.updatedAt || 0) - (left.lastStateChangeAt || left.updatedAt || 0))[0] || null;
+}
+
 export function defaultSessionLabel(state) {
   switch (state) {
     case RUN_STATES.STARTING:
@@ -262,6 +279,34 @@ export function defaultSessionLabel(state) {
   }
 }
 
+export function pruneExpiredSessions(registry, sessions, {
+  now = Date.now(),
+  activeSessionStaleMs,
+  terminalRetentionMs
+}) {
+  const removed = [];
+
+  for (const session of sessions) {
+    const updatedAt = session.updatedAt || 0;
+    const heartbeatAt = session.heartbeatAt || updatedAt;
+
+    if (TERMINAL_STATES.has(session.state)) {
+      if (now - updatedAt > terminalRetentionMs) {
+        registry.removeSession(session.sessionId);
+        removed.push(session.sessionId);
+      }
+      continue;
+    }
+
+    if (now - heartbeatAt > activeSessionStaleMs && !isPidRunning(session.pid)) {
+      registry.removeSession(session.sessionId);
+      removed.push(session.sessionId);
+    }
+  }
+
+  return removed;
+}
+
 export function getSessionDisplayName(session, { maxLength = 12 } = {}) {
   const preferred = session?.sessionName || session?.sessionId || '';
   const normalized = String(preferred)
@@ -279,7 +324,5 @@ export function getSessionDisplayName(session, { maxLength = 12 } = {}) {
     return normalized.slice(0, maxLength);
   }
 
-  const suffix = String(session.sessionId || '').toUpperCase();
-  const combined = suffix ? `${normalized}-${suffix}` : normalized;
-  return combined.slice(0, maxLength);
+  return normalized.slice(0, maxLength);
 }

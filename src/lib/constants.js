@@ -10,6 +10,7 @@ export const DEFAULT_ROTATE_MAX_SESSIONS = 5;
 export const DEFAULT_TERMINAL_SESSION_TTL_MS = 30 * 60 * 1000;
 export const DEFAULT_ACTIVE_SESSION_STALE_MS = 90 * 1000;
 export const DEFAULT_RESULT_HOLD_MS = 15000;
+export const DEFAULT_TERMINAL_PROMOTION_MS = 12000;
 export const DEFAULT_LOG_LEVEL = 'info';
 
 export const RUN_STATES = Object.freeze({

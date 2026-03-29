@@ -45,6 +45,7 @@
 - 状态名，例如 `RUNNING` / `WAIT` / `DONE`
 - 会话标识，优先级如下：
   - `--session-name` / `DOT_CODEX_SESSION_NAME`
+  - Codex 自己的 thread name
   - 当前项目目录名
   - 短会话 `ID`
 
@@ -84,9 +85,10 @@
 
 4. 终态会话
 - `completed` / `failed` / `cancelled`
-- 只在没有活跃会话之后展示最新结果态
-- 不会在活跃轮播期间插播旧 `DONE`
-- 不会无限占用设备
+- 新进入终态的那一次，会被提升成一次性“结果事件”
+- 如果当时还有别的活跃会话，这个新结果仍会被展示一次
+- 展示窗口过后会自动从 runtime 清理掉
+- 旧 `DONE` 不会反复混进轮播
 
 ### 2.4 接管与释放
 
@@ -107,6 +109,7 @@ Dot 就进入 Codex takeover 模式。
 - 当前展示会话状态变化：立即推屏
 - 其他会话：统一进入 rotator 调度
 - `waiting_input`：允许抢占
+- 新进入 `completed/failed` 的结果态：允许提升一次，确保首次完成/失败可见
 
 #### 退出接管
 
@@ -129,8 +132,9 @@ Dot 就进入 Codex takeover 模式。
 
 补充：
 
-- 如果此时还存在别的活跃会话，旧的 `completed/done` 不会混进轮播
-- `done` 只会在“所有活跃会话结束之后”进入结果态展示窗口
+- 旧的 `completed/done` 不会混进轮播
+- 但“刚刚完成”的那个 `done` 仍会作为一次性结果事件被展示
+- 结果展示窗口结束后，该终态会话会从 runtime 清理掉
 
 ## 3. 与 Dot 原生循环内容的关系
 
@@ -265,9 +269,9 @@ DOT_CODEX_FRAME_INTERVAL_MS=1200
 DOT_CODEX_ROTATE_INTERVAL_MS=8000
 DOT_CODEX_ROTATOR_POLL_MS=1000
 DOT_CODEX_ROTATE_MAX_SESSIONS=5
-DOT_CODEX_TERMINAL_SESSION_TTL_MS=1800000
 DOT_CODEX_ACTIVE_SESSION_STALE_MS=90000
 DOT_CODEX_RESULT_HOLD_MS=15000
+DOT_CODEX_TERMINAL_PROMOTION_MS=12000
 DOT_CODEX_RESTORE_MODE=hold
 DOT_CODEX_RESTORE_DELAY_MS=15000
 DOT_CODEX_SESSION_NAME=
@@ -287,11 +291,11 @@ DOT_CODEX_SESSION_NAME=
 - `DOT_CODEX_ACTIVE_SESSION_STALE_MS`
   - 活跃会话多久没有心跳就视为失效
 
-- `DOT_CODEX_TERMINAL_SESSION_TTL_MS`
-  - 结果态最多保留多久
-
 - `DOT_CODEX_RESULT_HOLD_MS`
   - 当所有活跃会话结束后，最新结果态在释放接管前还能保留多久
+
+- `DOT_CODEX_TERMINAL_PROMOTION_MS`
+  - 新进入 `completed/failed` 的会话，在还有活跃会话时可被提升展示多久
 
 ## 8. 常用命令
 
@@ -337,6 +341,12 @@ node src/cli.js run -- codex
 node src/cli.js sessions
 ```
 
+查看机器可读 JSON：
+
+```bash
+node src/cli.js sessions --json
+```
+
 启动后台 rotator：
 
 ```bash
@@ -366,6 +376,7 @@ npm test
 当前测试覆盖：
 
 - `AssetStore`
+- `Codex thread id` 解析
 - `frame overlay`
 - `RenderController`
 - `SessionRegistry` 选择逻辑
@@ -445,4 +456,5 @@ npm test
    - `waiting_input` 优先
    - 当前展示会话实时更新
    - 其他活跃会话轮播
+   - 新进入 `done/failed` 的会话会被提升展示一次
    - 无活跃会话后自动释放接管

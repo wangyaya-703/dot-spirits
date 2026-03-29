@@ -7,6 +7,7 @@ import { spawn as spawnProcess } from 'node:child_process';
 import { spawn as spawnPty } from 'node-pty';
 import { bootstrapRuntime } from '../lib/command-helpers.js';
 import { getProjectRoot } from '../lib/config.js';
+import { extractCodexThreadId, readCodexThreadName } from '../lib/codex-thread-index.js';
 import { CodexStateDetector } from '../lib/state-detector.js';
 import { RUN_STATES } from '../lib/constants.js';
 import { SessionRegistry, ensureRotatorRunning } from '../lib/session-registry.js';
@@ -21,7 +22,9 @@ export async function runCommand(childArgs, cliOptions) {
   const [command = 'codex', ...args] = childArgs.length > 0 ? childArgs : ['codex'];
   const detector = new CodexStateDetector(config.extraWaitingInputPatterns);
   const sessionId = cliOptions.sessionId || createSessionId();
-  const sessionName = resolveSessionName({ cliOptions, config, cwd: process.cwd(), sessionId });
+  const pinnedSessionName = cliOptions.sessionName || config.sessionName || null;
+  let sessionName = resolveSessionName({ pinnedSessionName, cwd: process.cwd(), sessionId });
+  let codexThreadId = null;
   const registry = new SessionRegistry({ runtimeRoot: config.runtimeRoot, logger });
   const rotator = ensureRotatorRunning({ config, logger });
 
@@ -38,6 +41,22 @@ export async function runCommand(childArgs, cliOptions) {
 
   const wrappedProcess = spawnWrappedProcess({ command, args, logger });
   const heartbeat = setInterval(() => {
+    const nextName = refreshCodexThreadName({ codexThreadId, pinnedSessionName, currentName: sessionName });
+    if (nextName !== sessionName) {
+      sessionName = nextName;
+      registry.upsertSession({
+        sessionId,
+        state: detector.getState(),
+        command,
+        args,
+        cwd: process.cwd(),
+        pid: process.pid,
+        sessionName,
+        codexThreadId
+      });
+      return;
+    }
+
     registry.heartbeat(sessionId);
   }, 5000);
 
@@ -54,6 +73,25 @@ export async function runCommand(childArgs, cliOptions) {
       }
     }
 
+    const nextThreadId = extractCodexThreadId(data);
+    if (nextThreadId && nextThreadId !== codexThreadId) {
+      codexThreadId = nextThreadId;
+      const nextName = refreshCodexThreadName({ codexThreadId, pinnedSessionName, currentName: sessionName });
+      if (nextName !== sessionName) {
+        sessionName = nextName;
+      }
+      registry.upsertSession({
+        sessionId,
+        state: detector.getState(),
+        command,
+        args,
+        cwd: process.cwd(),
+        pid: process.pid,
+        sessionName,
+        codexThreadId
+      });
+    }
+
     const transition = detector.ingest(data);
     if (transition) {
       logger.debug(transition, 'Codex state transition detected');
@@ -64,7 +102,8 @@ export async function runCommand(childArgs, cliOptions) {
         args,
         cwd: process.cwd(),
         pid: process.pid,
-        sessionName
+        sessionName,
+        codexThreadId
       });
     }
   });
@@ -99,7 +138,8 @@ export async function runCommand(childArgs, cliOptions) {
           args,
           cwd: process.cwd(),
           pid: process.pid,
-          sessionName
+          sessionName,
+          codexThreadId
         });
         resolve(code);
       } catch (error) {
@@ -115,10 +155,9 @@ function createSessionId() {
   return crypto.randomBytes(2).toString('hex').toUpperCase();
 }
 
-function resolveSessionName({ cliOptions, config, cwd, sessionId }) {
-  const explicit = cliOptions.sessionName || config.sessionName;
-  if (explicit) {
-    return String(explicit).trim();
+function resolveSessionName({ pinnedSessionName, cwd, sessionId }) {
+  if (pinnedSessionName) {
+    return String(pinnedSessionName).trim();
   }
 
   const base = path.basename(cwd || '');
@@ -127,6 +166,14 @@ function resolveSessionName({ cliOptions, config, cwd, sessionId }) {
   }
 
   return sessionId;
+}
+
+function refreshCodexThreadName({ codexThreadId, pinnedSessionName, currentName }) {
+  if (pinnedSessionName || !codexThreadId) {
+    return currentName;
+  }
+
+  return readCodexThreadName(codexThreadId) || currentName;
 }
 
 function wireInput(wrappedProcess) {

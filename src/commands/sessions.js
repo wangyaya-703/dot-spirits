@@ -1,10 +1,13 @@
+import path from 'node:path';
 import { bootstrapRuntime, printJson } from '../lib/command-helpers.js';
 import {
   SessionRegistry,
   getSessionDisplayName,
   hasActiveSessions,
+  pruneExpiredSessions,
   selectActiveRenderableSessions,
   selectLatestTerminalSession,
+  selectPromotableTerminalSession,
   selectRenderableSessions
 } from '../lib/session-registry.js';
 
@@ -17,13 +20,20 @@ export async function sessionsCommand(cliOptions) {
 
   const registry = new SessionRegistry({ runtimeRoot: config.runtimeRoot, logger });
   const now = Date.now();
+  const terminalRetentionMs = Math.max(config.resultHoldMs, config.terminalPromotionMs);
+  pruneExpiredSessions(registry, registry.listSessions(), {
+    now,
+    activeSessionStaleMs: config.activeSessionStaleMs,
+    terminalRetentionMs
+  });
+
   const allSessions = registry.listSessions()
     .sort((left, right) => (right.updatedAt || 0) - (left.updatedAt || 0));
   const renderableSessions = selectRenderableSessions(allSessions, {
     now,
     rotateMaxSessions: config.rotateMaxSessions,
     activeSessionStaleMs: config.activeSessionStaleMs,
-    terminalSessionTtlMs: config.terminalSessionTtlMs
+    terminalSessionTtlMs: terminalRetentionMs
   });
   const activeSessions = selectActiveRenderableSessions(allSessions, {
     now,
@@ -32,8 +42,11 @@ export async function sessionsCommand(cliOptions) {
   });
   const latestTerminal = selectLatestTerminalSession(renderableSessions);
   const status = registry.readStatus();
-
-  printJson({
+  const promotedTerminal = selectPromotableTerminalSession(renderableSessions, {
+    now,
+    terminalPromotionMs: config.terminalPromotionMs
+  });
+  const payload = {
     runtimeRoot: config.runtimeRoot,
     rotator: {
       pid: registry.readPid()?.pid || null,
@@ -47,10 +60,12 @@ export async function sessionsCommand(cliOptions) {
         now,
         activeSessionStaleMs: config.activeSessionStaleMs
       }),
-      latestTerminalSessionId: latestTerminal?.sessionId || null
+      latestTerminalSessionId: latestTerminal?.sessionId || null,
+      promotedTerminalSessionId: promotedTerminal?.sessionId || null
     },
     sessions: renderableSessions.map((session) => ({
       sessionId: session.sessionId,
+      codexThreadId: session.codexThreadId || null,
       sessionName: session.sessionName || null,
       displayName: getSessionDisplayName(session),
       state: session.state,
@@ -60,5 +75,71 @@ export async function sessionsCommand(cliOptions) {
       heartbeatAt: session.heartbeatAt,
       sequenceVersion: session.sequenceVersion
     }))
-  });
+  };
+
+  if (cliOptions.json) {
+    printJson(payload);
+    return;
+  }
+
+  printTable(payload);
+}
+
+function printTable(payload) {
+  process.stdout.write(`Runtime: ${payload.runtimeRoot}\n`);
+  process.stdout.write(`Rotator PID: ${payload.rotator.pid || '-'}\n`);
+  process.stdout.write(
+    `Mode: ${payload.rotator.status?.mode || 'idle'}  Current: ${payload.rotator.status?.currentSessionId || '-'}  Promoted: ${payload.summary.promotedTerminalSessionId || '-'}\n`
+  );
+  process.stdout.write(
+    `Summary: total=${payload.summary.totalSessions} renderable=${payload.summary.renderableSessions} active=${payload.summary.activeSessions} latest_terminal=${payload.summary.latestTerminalSessionId || '-'}\n\n`
+  );
+
+  const rows = payload.sessions.map((session) => ({
+    NAME: session.displayName || '-',
+    ID: session.sessionId,
+    STATE: session.state,
+    THREAD: session.codexThreadId ? session.codexThreadId.slice(0, 8) : '-',
+    UPDATED: formatAge(session.updatedAt),
+    CWD: path.basename(session.cwd || '') || session.cwd || '-'
+  }));
+
+  if (rows.length === 0) {
+    process.stdout.write('No sessions.\n');
+    return;
+  }
+
+  const headers = Object.keys(rows[0]);
+  const widths = Object.fromEntries(headers.map((header) => [
+    header,
+    Math.max(header.length, ...rows.map((row) => String(row[header]).length))
+  ]));
+
+  const headerLine = headers.map((header) => pad(String(header), widths[header])).join('  ');
+  const divider = headers.map((header) => '-'.repeat(widths[header])).join('  ');
+  process.stdout.write(`${headerLine}\n${divider}\n`);
+  for (const row of rows) {
+    process.stdout.write(`${headers.map((header) => pad(String(row[header]), widths[header])).join('  ')}\n`);
+  }
+}
+
+function formatAge(timestamp) {
+  if (!timestamp) {
+    return '-';
+  }
+
+  const deltaSeconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+  if (deltaSeconds < 60) {
+    return `${deltaSeconds}s`;
+  }
+
+  if (deltaSeconds < 3600) {
+    return `${Math.floor(deltaSeconds / 60)}m`;
+  }
+
+  return `${Math.floor(deltaSeconds / 3600)}h`;
+}
+
+function pad(value, width) {
+  return value.padEnd(width, ' ');
 }
