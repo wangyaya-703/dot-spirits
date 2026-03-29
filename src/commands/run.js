@@ -20,7 +20,10 @@ export async function runCommand(childArgs, cliOptions) {
   });
 
   const [command = 'codex', ...args] = childArgs.length > 0 ? childArgs : ['codex'];
-  const detector = new CodexStateDetector(config.extraWaitingInputPatterns);
+  const detector = new CodexStateDetector(config.extraWaitingInputPatterns, {
+    runningIdleMs: config.runningIdleMs,
+    completedToIdleMs: config.terminalPromotionMs
+  });
   const sessionId = cliOptions.sessionId || createSessionId();
   const pinnedSessionName = cliOptions.sessionName || config.sessionName || null;
   let sessionName = resolveSessionName({ pinnedSessionName, cwd: process.cwd(), sessionId });
@@ -47,6 +50,21 @@ export async function runCommand(childArgs, cliOptions) {
       registry.upsertSession({
         sessionId,
         state: detector.getState(),
+        command,
+        args,
+        cwd: process.cwd(),
+        pid: process.pid,
+        sessionName,
+        codexThreadId
+      });
+      return;
+    }
+
+    const transition = detector.poll();
+    if (transition) {
+      registry.upsertSession({
+        sessionId,
+        state: transition.nextState,
         command,
         args,
         cwd: process.cwd(),

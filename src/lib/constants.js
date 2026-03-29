@@ -13,10 +13,12 @@ export const DEFAULT_RESULT_HOLD_MS = 15000;
 export const DEFAULT_TERMINAL_PROMOTION_MS = 12000;
 export const DEFAULT_TAKEOVER_REASSERT_MS = 12000;
 export const DEFAULT_MAX_ENTER_FRAMES = 2;
+export const DEFAULT_RUNNING_IDLE_MS = 9000;
 export const DEFAULT_LOG_LEVEL = 'info';
 
 export const RUN_STATES = Object.freeze({
   STARTING: 'starting',
+  IDLE: 'idle',
   RUNNING: 'running',
   WAITING_INPUT: 'waiting_input',
   COMPLETED: 'completed',

@@ -135,7 +135,8 @@ Dot 就进入 Codex takeover 模式。
 补充：
 
 - 旧的 `completed/done` 不会混进轮播
-- 但“刚刚完成”的那个 `done` 仍会作为一次性结果事件被展示
+- 每一轮 `running` 结束后，都会进入一次 `done`
+- 如果同一个会话后面又开始新一轮任务流，后续仍然可以再次进入 `done`
 - 结果展示窗口结束后，该终态会话会从 runtime 清理掉
 
 ## 3. 与 Dot 原生循环内容的关系
@@ -269,6 +270,7 @@ DOT_CODEX_DITHER_TYPE=NONE
 DOT_CODEX_MIN_REFRESH_INTERVAL_MS=1500
 DOT_CODEX_FRAME_INTERVAL_MS=2200
 DOT_CODEX_MAX_ENTER_FRAMES=2
+DOT_CODEX_RUNNING_IDLE_MS=9000
 DOT_CODEX_ROTATE_INTERVAL_MS=12000
 DOT_CODEX_ROTATOR_POLL_MS=1000
 DOT_CODEX_ROTATE_MAX_SESSIONS=5
@@ -302,11 +304,15 @@ DOT_CODEX_SESSION_NAME=
   - 新进入 `completed/failed` 的会话，在还有活跃会话时可被提升展示多久
 
 - `DOT_CODEX_TAKEOVER_REASSERT_MS`
-  - takeover 期间多久重申一次当前 `hold` 帧，用来把其他 Dot 内容压回去
+  - takeover 期间多久检查一次设备当前图是否已被其他 Dot 内容盖掉
+  - 只有确认被盖掉时，才会重推当前 `hold` 帧抢回
 
 - `DOT_CODEX_MAX_ENTER_FRAMES`
   - 每次状态切换最多播放几张 `enter` 帧
   - 默认只播放 `2` 张，再进入 `hold`
+
+- `DOT_CODEX_RUNNING_IDLE_MS`
+  - `running` 安静多久后，被视为这一轮任务流已经结束，进入 `done`
 
 ## 8. 常用命令
 

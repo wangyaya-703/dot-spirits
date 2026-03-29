@@ -33,6 +33,7 @@ export async function daemonCommand(cliOptions) {
     displayedSignatureBySession: new Map(),
     lastPushAt: 0,
     lastFingerprint: null,
+    lastOwnedImageUrl: null,
     sessionOrderCursor: 0,
     lastSessionState: null
   };
@@ -129,13 +130,16 @@ export async function daemonCommand(cliOptions) {
     const hasSeenSignature = state.displayedSignatureBySession.get(target.sessionId) === signature;
     const shouldAnimate = !hasSeenSignature;
     const isSessionSwitch = state.currentSessionId !== target.sessionId;
-    const shouldReassert = (
+    const dueForReassert = (
       config.takeoverReassertMs > 0 &&
       !isSessionSwitch &&
       !shouldAnimate &&
       state.currentSessionId === target.sessionId &&
       now - state.lastPushAt >= config.takeoverReassertMs
     );
+    const shouldReassert = dueForReassert
+      ? await shouldReclaimTakeover({ client, runtimeState: state, logger })
+      : false;
 
     if (isSessionSwitch || shouldAnimate || shouldReassert) {
       await pushSessionFrames({
@@ -166,6 +170,7 @@ export async function daemonCommand(cliOptions) {
 function resetTakeoverState(state) {
   state.currentSessionId = null;
   state.currentSlotEndsAt = 0;
+  state.lastOwnedImageUrl = null;
 }
 
 function selectNextSession({ state, sessions, promotedTerminal, now }) {
@@ -260,6 +265,8 @@ async function pushSessionFrames({ client, assetStore, config, logger, session, 
       frame: frames[index]
     }, 'Rotator pushed frame to Quote/0');
   }
+
+  await refreshOwnedRender({ client, runtimeState, logger });
 }
 
 function publishStatus({ registry, state, sessions, activeSessions, promotedTerminal, mode }) {
@@ -271,6 +278,31 @@ function publishStatus({ registry, state, sessions, activeSessions, promotedTerm
     renderableSessionIds: sessions.map((session) => session.sessionId),
     activeSessionIds: activeSessions.map((session) => session.sessionId),
     promotedTerminalSessionId: promotedTerminal?.sessionId || null,
-    lastFingerprint: state.lastFingerprint
+    lastFingerprint: state.lastFingerprint,
+    lastOwnedImageUrl: state.lastOwnedImageUrl
   });
+}
+
+async function refreshOwnedRender({ client, runtimeState, logger }) {
+  try {
+    const status = await client.getStatus();
+    runtimeState.lastOwnedImageUrl = status?.renderInfo?.current?.image?.[0] || null;
+  } catch (error) {
+    logger.debug?.({ err: error }, 'Unable to refresh owned Dot render info after push');
+  }
+}
+
+async function shouldReclaimTakeover({ client, runtimeState, logger }) {
+  if (!runtimeState.lastOwnedImageUrl) {
+    return false;
+  }
+
+  try {
+    const status = await client.getStatus();
+    const currentImageUrl = status?.renderInfo?.current?.image?.[0] || null;
+    return Boolean(currentImageUrl && currentImageUrl !== runtimeState.lastOwnedImageUrl);
+  } catch (error) {
+    logger.debug?.({ err: error }, 'Unable to verify Dot current image; skipping smart takeover reclaim');
+    return false;
+  }
 }

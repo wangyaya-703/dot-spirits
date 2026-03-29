@@ -4,7 +4,7 @@ import { CodexStateDetector } from '../src/lib/state-detector.js';
 import { RUN_STATES } from '../src/lib/constants.js';
 
 test('CodexStateDetector classifies running, waiting_input, and completion states', () => {
-  const detector = new CodexStateDetector();
+  const detector = new CodexStateDetector([], { runningIdleMs: 10, completedToIdleMs: 10 });
 
   const running = detector.ingest('Reading files and updating plan...');
   assert.equal(running.nextState, RUN_STATES.RUNNING);
@@ -36,4 +36,25 @@ test('CodexStateDetector ignores control-only terminal noise', () => {
 
   assert.equal(transition, null);
   assert.equal(detector.getState(), RUN_STATES.STARTING);
+});
+
+test('CodexStateDetector turns quiet running into completed and then idle', async () => {
+  const detector = new CodexStateDetector([], { runningIdleMs: 5, completedToIdleMs: 5 });
+  detector.ingest('Reading files and updating plan...');
+
+  await new Promise((resolve) => setTimeout(resolve, 8));
+  const completed = detector.poll();
+  assert.equal(completed.nextState, RUN_STATES.COMPLETED);
+
+  await new Promise((resolve) => setTimeout(resolve, 8));
+  const idle = detector.poll();
+  assert.equal(idle.nextState, RUN_STATES.IDLE);
+});
+
+test('CodexStateDetector does not emit completed on clean exit from idle', () => {
+  const detector = new CodexStateDetector([], { runningIdleMs: 5, completedToIdleMs: 5 });
+  detector.transition(RUN_STATES.IDLE, 'test setup');
+
+  const transition = detector.markExit(0, null);
+  assert.equal(transition, null);
 });

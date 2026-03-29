@@ -34,6 +34,7 @@ program
   .option('--min-refresh-interval-ms <ms>', 'Minimum interval between pushes')
   .option('--frame-interval-ms <ms>', 'Interval between enter frames')
   .option('--max-enter-frames <n>', 'Maximum number of enter animation frames to play per state change')
+  .option('--running-idle-ms <ms>', 'How long a running task can stay quiet before it is treated as done/idle')
   .option('--restore-mode <mode>', 'hold or restore')
   .option('--restore-delay-ms <ms>', 'Delay before restoring prior content')
   .option('--default-image-path <path>', 'Fallback PNG to restore after run')
