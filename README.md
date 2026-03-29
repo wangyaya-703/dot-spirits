@@ -10,6 +10,8 @@
 - 多会话轮播
 - `waiting_input` 高优先级抢占
 - 结果态短时保留后释放接管
+- takeover 期间保屏重申，减少被其他 Dot 内容插进来
+- 默认减帧并放慢动画节奏，降低闪烁
 - 与 Dot 设备原本 loop 内容共存
 
 ## 1. 目标
@@ -265,13 +267,15 @@ DOT_CODEX_ASSET_THEME=siamese-sticker
 DOT_CODEX_BORDER=0
 DOT_CODEX_DITHER_TYPE=NONE
 DOT_CODEX_MIN_REFRESH_INTERVAL_MS=1500
-DOT_CODEX_FRAME_INTERVAL_MS=1200
-DOT_CODEX_ROTATE_INTERVAL_MS=8000
+DOT_CODEX_FRAME_INTERVAL_MS=2200
+DOT_CODEX_MAX_ENTER_FRAMES=2
+DOT_CODEX_ROTATE_INTERVAL_MS=12000
 DOT_CODEX_ROTATOR_POLL_MS=1000
 DOT_CODEX_ROTATE_MAX_SESSIONS=5
 DOT_CODEX_ACTIVE_SESSION_STALE_MS=90000
 DOT_CODEX_RESULT_HOLD_MS=15000
 DOT_CODEX_TERMINAL_PROMOTION_MS=12000
+DOT_CODEX_TAKEOVER_REASSERT_MS=12000
 DOT_CODEX_RESTORE_MODE=hold
 DOT_CODEX_RESTORE_DELAY_MS=15000
 DOT_CODEX_SESSION_NAME=
@@ -296,6 +300,13 @@ DOT_CODEX_SESSION_NAME=
 
 - `DOT_CODEX_TERMINAL_PROMOTION_MS`
   - 新进入 `completed/failed` 的会话，在还有活跃会话时可被提升展示多久
+
+- `DOT_CODEX_TAKEOVER_REASSERT_MS`
+  - takeover 期间多久重申一次当前 `hold` 帧，用来把其他 Dot 内容压回去
+
+- `DOT_CODEX_MAX_ENTER_FRAMES`
+  - 每次状态切换最多播放几张 `enter` 帧
+  - 默认只播放 `2` 张，再进入 `hold`
 
 ## 8. 常用命令
 
@@ -457,4 +468,5 @@ npm test
    - 当前展示会话实时更新
    - 其他活跃会话轮播
    - 新进入 `done/failed` 的会话会被提升展示一次
+   - takeover 期间会周期性重申当前 `hold` 帧
    - 无活跃会话后自动释放接管

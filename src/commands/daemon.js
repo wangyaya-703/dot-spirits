@@ -33,7 +33,8 @@ export async function daemonCommand(cliOptions) {
     displayedSignatureBySession: new Map(),
     lastPushAt: 0,
     lastFingerprint: null,
-    sessionOrderCursor: 0
+    sessionOrderCursor: 0,
+    lastSessionState: null
   };
 
   const cleanup = () => {
@@ -128,8 +129,15 @@ export async function daemonCommand(cliOptions) {
     const hasSeenSignature = state.displayedSignatureBySession.get(target.sessionId) === signature;
     const shouldAnimate = !hasSeenSignature;
     const isSessionSwitch = state.currentSessionId !== target.sessionId;
+    const shouldReassert = (
+      config.takeoverReassertMs > 0 &&
+      !isSessionSwitch &&
+      !shouldAnimate &&
+      state.currentSessionId === target.sessionId &&
+      now - state.lastPushAt >= config.takeoverReassertMs
+    );
 
-    if (isSessionSwitch || shouldAnimate) {
+    if (isSessionSwitch || shouldAnimate || shouldReassert) {
       await pushSessionFrames({
         client,
         assetStore,
@@ -137,12 +145,16 @@ export async function daemonCommand(cliOptions) {
         logger,
         session: target,
         includeEnter: shouldAnimate,
+        forceDuplicateHold: shouldReassert,
         runtimeState: state
       });
 
       state.displayedSignatureBySession.set(target.sessionId, signature);
       state.currentSessionId = target.sessionId;
-      state.currentSlotEndsAt = Date.now() + config.rotateIntervalMs;
+      state.lastSessionState = target.state;
+      if (isSessionSwitch || shouldAnimate) {
+        state.currentSlotEndsAt = Date.now() + config.rotateIntervalMs;
+      }
     }
 
     publishStatus({ registry, state, sessions, activeSessions, promotedTerminal, mode: 'takeover' });
@@ -204,8 +216,11 @@ function selectNextSession({ state, sessions, promotedTerminal, now }) {
   return sessions[nextIndex];
 }
 
-async function pushSessionFrames({ client, assetStore, config, logger, session, includeEnter, runtimeState }) {
-  const frames = assetStore.getStateSequence(session.state, { includeEnter });
+async function pushSessionFrames({ client, assetStore, config, logger, session, includeEnter, forceDuplicateHold = false, runtimeState }) {
+  const frames = assetStore.getStateSequence(session.state, {
+    includeEnter,
+    maxEnterFrames: config.maxEnterFrames
+  });
   for (let index = 0; index < frames.length; index += 1) {
     const buffer = assetStore.readImageBuffer(frames[index]);
     const rendered = composeFrameWithOverlay(buffer, {
@@ -223,7 +238,8 @@ async function pushSessionFrames({ client, assetStore, config, logger, session, 
 
     const imageBase64 = rendered.toString('base64');
     const fingerprint = crypto.createHash('sha1').update(imageBase64).digest('hex');
-    if (fingerprint === runtimeState.lastFingerprint) {
+    const forcePush = forceDuplicateHold && index === frames.length - 1;
+    if (!forcePush && fingerprint === runtimeState.lastFingerprint) {
       continue;
     }
 

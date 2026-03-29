@@ -9,12 +9,14 @@ import {
   DEFAULT_ASSET_THEME,
   DEFAULT_FRAME_INTERVAL_MS,
   DEFAULT_LOG_LEVEL,
+  DEFAULT_MAX_ENTER_FRAMES,
   DEFAULT_MIN_REFRESH_INTERVAL_MS,
   DEFAULT_ROTATE_INTERVAL_MS,
   DEFAULT_ROTATOR_POLL_MS,
   DEFAULT_ROTATE_MAX_SESSIONS,
   DEFAULT_RESULT_HOLD_MS,
   DEFAULT_RESTORE_DELAY_MS,
+  DEFAULT_TAKEOVER_REASSERT_MS,
   DEFAULT_TERMINAL_SESSION_TTL_MS,
   DEFAULT_ACTIVE_SESSION_STALE_MS,
   DEFAULT_TERMINAL_PROMOTION_MS,
@@ -52,6 +54,7 @@ const configSchema = z.object({
     .optional(),
   minRefreshIntervalMs: z.coerce.number().int().min(0).default(DEFAULT_MIN_REFRESH_INTERVAL_MS),
   frameIntervalMs: z.coerce.number().int().min(0).default(DEFAULT_FRAME_INTERVAL_MS),
+  maxEnterFrames: z.coerce.number().int().min(0).max(10).default(DEFAULT_MAX_ENTER_FRAMES),
   restoreMode: z.enum(['hold', 'restore']).default('hold'),
   restoreDelayMs: z.coerce.number().int().min(0).default(DEFAULT_RESTORE_DELAY_MS),
   defaultImagePath: z.string().min(1).optional(),
@@ -65,6 +68,7 @@ const configSchema = z.object({
   activeSessionStaleMs: z.coerce.number().int().min(1000).default(DEFAULT_ACTIVE_SESSION_STALE_MS),
   resultHoldMs: z.coerce.number().int().min(0).default(DEFAULT_RESULT_HOLD_MS),
   terminalPromotionMs: z.coerce.number().int().min(0).default(DEFAULT_TERMINAL_PROMOTION_MS),
+  takeoverReassertMs: z.coerce.number().int().min(0).default(DEFAULT_TAKEOVER_REASSERT_MS),
   logLevel: z.string().min(1).default(DEFAULT_LOG_LEVEL),
   extraWaitingInputPatterns: z.array(z.string()).default([])
 });
@@ -104,6 +108,7 @@ function buildEnvConfig() {
     ditherKernel: process.env.DOT_CODEX_DITHER_KERNEL,
     minRefreshIntervalMs: process.env.DOT_CODEX_MIN_REFRESH_INTERVAL_MS,
     frameIntervalMs: process.env.DOT_CODEX_FRAME_INTERVAL_MS,
+    maxEnterFrames: process.env.DOT_CODEX_MAX_ENTER_FRAMES,
     restoreMode: process.env.DOT_CODEX_RESTORE_MODE,
     restoreDelayMs: process.env.DOT_CODEX_RESTORE_DELAY_MS,
     defaultImagePath: process.env.DOT_CODEX_DEFAULT_IMAGE_PATH,
@@ -117,6 +122,7 @@ function buildEnvConfig() {
     activeSessionStaleMs: process.env.DOT_CODEX_ACTIVE_SESSION_STALE_MS,
     resultHoldMs: process.env.DOT_CODEX_RESULT_HOLD_MS,
     terminalPromotionMs: process.env.DOT_CODEX_TERMINAL_PROMOTION_MS,
+    takeoverReassertMs: process.env.DOT_CODEX_TAKEOVER_REASSERT_MS,
     logLevel: process.env.DOT_CODEX_LOG_LEVEL,
     extraWaitingInputPatterns: process.env.DOT_CODEX_WAITING_INPUT_PATTERNS
       ? process.env.DOT_CODEX_WAITING_INPUT_PATTERNS.split(',').map((value) => value.trim()).filter(Boolean)

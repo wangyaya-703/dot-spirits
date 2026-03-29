@@ -34,9 +34,12 @@ export class AssetStore {
       .map((name) => path.join(enterDir, name));
   }
 
-  getStateSequence(state, { includeEnter = true } = {}) {
+  getStateSequence(state, { includeEnter = true, maxEnterFrames } = {}) {
     const frames = includeEnter ? this.getEnterFrames(state) : [];
-    return [...frames, this.getHoldFrame(state)];
+    const limitedFrames = Number.isInteger(maxEnterFrames) && maxEnterFrames >= 0
+      ? frames.slice(0, maxEnterFrames)
+      : frames;
+    return [...limitedFrames, this.getHoldFrame(state)];
   }
 
   readImageAsBase64(filePath) {

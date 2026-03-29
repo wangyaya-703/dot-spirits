@@ -33,6 +33,7 @@ program
   .option('--dither-kernel <kernel>', 'Dot. dither kernel')
   .option('--min-refresh-interval-ms <ms>', 'Minimum interval between pushes')
   .option('--frame-interval-ms <ms>', 'Interval between enter frames')
+  .option('--max-enter-frames <n>', 'Maximum number of enter animation frames to play per state change')
   .option('--restore-mode <mode>', 'hold or restore')
   .option('--restore-delay-ms <ms>', 'Delay before restoring prior content')
   .option('--default-image-path <path>', 'Fallback PNG to restore after run')
@@ -47,6 +48,7 @@ program
   .option('--active-session-stale-ms <ms>', 'How long to keep a live session without heartbeat')
   .option('--result-hold-ms <ms>', 'How long to keep the latest terminal result on screen before releasing takeover')
   .option('--terminal-promotion-ms <ms>', 'How long a newly completed/failed session is treated as a promotable event')
+  .option('--takeover-reassert-ms <ms>', 'How often takeover reasserts the current hold frame to override other Dot content')
   .option('--log-level <level>', 'Logger level');
 
 program

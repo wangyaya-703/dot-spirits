@@ -27,6 +27,18 @@ test('AssetStore returns sorted enter frames followed by hold frame', () => {
   );
 });
 
+test('AssetStore can limit enter frames before hold', () => {
+  const themeRoot = createTempTheme();
+  const store = new AssetStore(themeRoot);
+
+  const frames = store.getStateSequence('running', { maxEnterFrames: 1 });
+
+  assert.deepEqual(
+    frames.map((frame) => path.basename(frame)),
+    ['enter-01.png', 'hold.png']
+  );
+});
+
 test('AssetStore caches base64 data', () => {
   const themeRoot = createTempTheme();
   const store = new AssetStore(themeRoot);
