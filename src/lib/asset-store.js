@@ -42,6 +42,14 @@ export class AssetStore {
     return [...limitedFrames, this.getHoldFrame(state)];
   }
 
+  getAmbientStateFrames(state, { variantCount = 1 } = {}) {
+    const enterFrames = this.getEnterFrames(state);
+    const limitedVariants = Number.isInteger(variantCount) && variantCount >= 0
+      ? enterFrames.slice(Math.max(0, enterFrames.length - variantCount))
+      : enterFrames;
+    return [...limitedVariants, this.getHoldFrame(state)];
+  }
+
   readImageAsBase64(filePath) {
     if (!this.base64Cache.has(filePath)) {
       const contents = fs.readFileSync(filePath);

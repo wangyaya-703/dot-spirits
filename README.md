@@ -10,7 +10,7 @@
 - 多会话轮播
 - `waiting_input` 高优先级抢占
 - 结果态短时保留后释放接管
-- takeover 期间保屏重申，减少被其他 Dot 内容插进来
+- takeover 期间只在检测到设备画面真的被别的内容盖掉时才抢回
 - 默认减帧并放慢动画节奏，降低闪烁
 - 与 Dot 设备原本 loop 内容共存
 
@@ -29,6 +29,12 @@
 - Codex 活跃时：`dot-codex` 临时接管
 - Codex 全部结束后：停止继续抢屏，让设备回到自己的节奏
 
+这里的 rotator 会持续轮询，但轮询本身不等于刷新屏幕：
+
+- rotator 只是在后台检查当前会话池和设备当前图
+- 只有确实需要切换画面时才会推送 Dot
+- 长时间保持 `running` 的会话会低频换到另一张 `running` 图，避免一直停在同一张画面
+
 ## 2. 当前行为模型
 
 ### 2.1 会话状态
@@ -36,6 +42,7 @@
 每个 Codex 会话会被归类到以下状态之一：
 
 - `starting`
+- `idle`
 - `running`
 - `waiting_input`
 - `completed`
@@ -137,6 +144,8 @@ Dot 就进入 Codex takeover 模式。
 - 旧的 `completed/done` 不会混进轮播
 - 每一轮 `running` 结束后，都会进入一次 `done`
 - 如果同一个会话后面又开始新一轮任务流，后续仍然可以再次进入 `done`
+- `done` 展示窗口结束后，会话会转成 `idle`
+- 如果会话已经处在 `idle` 再正常退出，不会额外补一次 `done`
 - 结果展示窗口结束后，该终态会话会从 runtime 清理掉
 
 ## 3. 与 Dot 原生循环内容的关系
@@ -271,6 +280,7 @@ DOT_CODEX_MIN_REFRESH_INTERVAL_MS=1500
 DOT_CODEX_FRAME_INTERVAL_MS=2200
 DOT_CODEX_MAX_ENTER_FRAMES=2
 DOT_CODEX_RUNNING_IDLE_MS=9000
+DOT_CODEX_RUNNING_FRAME_CYCLE_MS=18000
 DOT_CODEX_ROTATE_INTERVAL_MS=12000
 DOT_CODEX_ROTATOR_POLL_MS=1000
 DOT_CODEX_ROTATE_MAX_SESSIONS=5
@@ -313,6 +323,10 @@ DOT_CODEX_SESSION_NAME=
 
 - `DOT_CODEX_RUNNING_IDLE_MS`
   - `running` 安静多久后，被视为这一轮任务流已经结束，进入 `done`
+
+- `DOT_CODEX_RUNNING_FRAME_CYCLE_MS`
+  - 长时间保持 `running` 时，多久切换一次另一张 `running` 图
+  - 这是低频换图，不会重播整段 `enter` 动画
 
 ## 8. 常用命令
 
@@ -474,5 +488,6 @@ npm test
    - 当前展示会话实时更新
    - 其他活跃会话轮播
    - 新进入 `done/failed` 的会话会被提升展示一次
-   - takeover 期间会周期性重申当前 `hold` 帧
+   - takeover 期间只有在检测到设备已经被其他内容盖掉时才会抢回
+   - 长时间 `running` 会低频切换另一张 `running` 图
    - 无活跃会话后自动释放接管

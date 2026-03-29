@@ -34,6 +34,7 @@ export async function daemonCommand(cliOptions) {
     lastPushAt: 0,
     lastFingerprint: null,
     lastOwnedImageUrl: null,
+    runningFrameIndexBySession: new Map(),
     sessionOrderCursor: 0,
     lastSessionState: null
   };
@@ -140,8 +141,16 @@ export async function daemonCommand(cliOptions) {
     const shouldReassert = dueForReassert
       ? await shouldReclaimTakeover({ client, runtimeState: state, logger })
       : false;
+    const shouldCycleRunningFrame = (
+      target.state === RUN_STATES.RUNNING &&
+      !isSessionSwitch &&
+      !shouldAnimate &&
+      !shouldReassert &&
+      config.runningFrameCycleMs > 0 &&
+      now - state.lastPushAt >= config.runningFrameCycleMs
+    );
 
-    if (isSessionSwitch || shouldAnimate || shouldReassert) {
+    if (isSessionSwitch || shouldAnimate || shouldReassert || shouldCycleRunningFrame) {
       await pushSessionFrames({
         client,
         assetStore,
@@ -149,6 +158,7 @@ export async function daemonCommand(cliOptions) {
         logger,
         session: target,
         includeEnter: shouldAnimate,
+        runningLoopOnly: shouldCycleRunningFrame,
         forceDuplicateHold: shouldReassert,
         runtimeState: state
       });
@@ -221,11 +231,13 @@ function selectNextSession({ state, sessions, promotedTerminal, now }) {
   return sessions[nextIndex];
 }
 
-async function pushSessionFrames({ client, assetStore, config, logger, session, includeEnter, forceDuplicateHold = false, runtimeState }) {
-  const frames = assetStore.getStateSequence(session.state, {
-    includeEnter,
-    maxEnterFrames: config.maxEnterFrames
-  });
+async function pushSessionFrames({ client, assetStore, config, logger, session, includeEnter, runningLoopOnly = false, forceDuplicateHold = false, runtimeState }) {
+  const frames = runningLoopOnly
+    ? getRunningLoopFrames({ assetStore, session, runtimeState })
+    : assetStore.getStateSequence(session.state, {
+        includeEnter,
+        maxEnterFrames: config.maxEnterFrames
+      });
   for (let index = 0; index < frames.length; index += 1) {
     const buffer = assetStore.readImageBuffer(frames[index]);
     const rendered = composeFrameWithOverlay(buffer, {
@@ -267,6 +279,18 @@ async function pushSessionFrames({ client, assetStore, config, logger, session, 
   }
 
   await refreshOwnedRender({ client, runtimeState, logger });
+}
+
+function getRunningLoopFrames({ assetStore, session, runtimeState }) {
+  const frames = assetStore.getAmbientStateFrames(session.state, { variantCount: 1 });
+  if (frames.length <= 1) {
+    return frames;
+  }
+
+  const currentIndex = runtimeState.runningFrameIndexBySession.get(session.sessionId) ?? (frames.length - 1);
+  const nextIndex = (currentIndex + 1) % frames.length;
+  runtimeState.runningFrameIndexBySession.set(session.sessionId, nextIndex);
+  return [frames[nextIndex]];
 }
 
 function publishStatus({ registry, state, sessions, activeSessions, promotedTerminal, mode }) {

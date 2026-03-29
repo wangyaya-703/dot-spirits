@@ -39,6 +39,18 @@ test('AssetStore can limit enter frames before hold', () => {
   );
 });
 
+test('AssetStore can return ambient frames for long-running state loops', () => {
+  const themeRoot = createTempTheme();
+  const store = new AssetStore(themeRoot);
+
+  const frames = store.getAmbientStateFrames('running', { variantCount: 1 });
+
+  assert.deepEqual(
+    frames.map((frame) => path.basename(frame)),
+    ['enter-02.png', 'hold.png']
+  );
+});
+
 test('AssetStore caches base64 data', () => {
   const themeRoot = createTempTheme();
   const store = new AssetStore(themeRoot);
