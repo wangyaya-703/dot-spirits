@@ -333,47 +333,77 @@ Use a shell-level `codex` wrapper so every normal `codex` invocation automatical
 - Default behavior should feel invisible to the user
 
 ## Multi-Process Policy
-If multiple Codex processes share the same Dot device and same `taskKey`, they will collide unless we arbitrate ownership.
-
-### What happens without arbitration
-- Last state update wins
-- Device display can flip between sessions unpredictably
-- Waiting_input from one session can overwrite completed from another
-- On an E Ink device this feels broken, not useful
+If multiple Codex processes share the same Dot device and same `taskKey`, they must be scheduled deliberately. Otherwise, the device will flicker unpredictably and the displayed state will not correspond to a single understandable session.
 
 ### Recommended policy
-Default to `exclusive-latest`.
+Default to `round-robin-active`.
 
 Definition:
-- only one Codex session owns the device at a time
-- the newest wrapper session steals ownership
-- older sessions continue running normally but stop pushing device updates
-- device always reflects the latest active session only
+- every active wrapper session is tracked in a shared session registry
+- the Dot display rotates across active sessions on a fixed cadence
+- each displayed card must include a short visible session id
+- `waiting_input` sessions get priority over `running`
+- terminal states are shown briefly, then aged out
 
 ### Why this is the right default
-- one screen can only tell one story clearly
-- round-robin state display would be noisy and confusing
-- waiting_input must be attributable to a single session
+- the user explicitly wants awareness of more than one Codex session
+- a single screen can still represent many sessions if each card is clearly labeled
+- session id on screen prevents ambiguity about which process currently owns the card
+
+### Priority order
+- `waiting_input`
+- `failed`
+- `running`
+- `starting`
+- `completed`
+- `cancelled`
+
+### Rotation rules
+- only one session is displayed at a time
+- each session gets a display slice, then control moves to the next eligible session
+- default slice:
+  - `waiting_input`: 8 seconds
+  - `failed`: 6 seconds
+  - `running`: 5 seconds
+  - `starting`: 4 seconds
+  - `completed`: 4 seconds
+  - `cancelled`: 4 seconds
+- if any session enters `waiting_input`, it should jump to the front of the queue on the next rotation boundary
+
+### Session ID treatment
+- render a short id on screen, for example `A1`, `B3`, or the last 4 chars of a generated session id
+- place it in a small bottom-right badge
+- the badge must not dominate the cat art
+- badge style must be identical in all states
+
+### Aging rules
+- `completed` and `cancelled` stay in the rotation queue for a short TTL, then disappear
+- recommended TTL:
+  - `completed`: 45 seconds
+  - `cancelled`: 20 seconds
+- `failed` should remain until the session exits or the TTL expires
 
 ### Future optional modes
-- `exclusive-first`: first session keeps ownership until exit
-- `exclusive-latest`: newest session takes over immediately
-- `summary-mode`: show aggregated count like `2 running / 1 waiting`
+- `exclusive-first`: first session keeps the screen until exit
+- `exclusive-latest`: newest session steals the screen
+- `summary-mode`: show aggregated counts like `2 running / 1 waiting`
 
-For V1, ship `exclusive-latest` only.
+For V1, ship `round-robin-active` only.
 
-## Session Collision Rules
-If we implement `exclusive-latest`, runtime should behave like this:
-- wrapper start writes an active-session lock file
-- lock contains session id, pid, start time, cwd, heartbeat time
-- each owner session refreshes heartbeat every few seconds
-- if a newer session starts, it replaces the lock
-- non-owner sessions enter shadow mode and suppress pushes
-- when owner exits, lock is released
+## Session Scheduling Rules
+If we implement `round-robin-active`, runtime should behave like this:
+- wrapper start writes or updates a shared session registry file
+- registry contains session id, pid, cwd, current state, last update time, and last shown time
+- each active session refreshes heartbeat every few seconds
+- a local scheduler chooses the next session to display based on priority and least-recently-shown order
+- only the scheduler pushes to the device
+- worker sessions publish state changes to the registry, but do not push directly unless they are currently selected
+- if a session heartbeat expires, it is removed from the rotation
+- if a session enters `waiting_input`, it is promoted in priority but still shows its session id
 
 ## Recommended Next Implementation Order
 1. Produce final art from this spec
-2. Add `exclusive-latest` session lock to runtime
+2. Add `round-robin-active` scheduler to runtime
 3. Add zsh wrapper/shim so `codex` auto-triggers Dot Codex
 
 ## Acceptance Criteria
