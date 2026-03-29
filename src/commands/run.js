@@ -2,42 +2,42 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
+import crypto from 'node:crypto';
 import { spawn as spawnProcess } from 'node:child_process';
 import { spawn as spawnPty } from 'node-pty';
 import { bootstrapRuntime } from '../lib/command-helpers.js';
 import { getProjectRoot } from '../lib/config.js';
 import { CodexStateDetector } from '../lib/state-detector.js';
-import { captureRestoreSnapshot } from '../lib/device-service.js';
-import { RenderController } from '../lib/render-controller.js';
 import { RUN_STATES } from '../lib/constants.js';
+import { SessionRegistry, ensureRotatorRunning } from '../lib/session-registry.js';
 
 export async function runCommand(childArgs, cliOptions) {
-  const { config, logger, client, assetStore } = await bootstrapRuntime({
+  const { config, logger } = await bootstrapRuntime({
     cliOptions,
     needsDevice: true,
     needsTaskKey: true
   });
 
   const [command = 'codex', ...args] = childArgs.length > 0 ? childArgs : ['codex'];
-  const restoreSnapshot = config.restoreMode === 'restore'
-    ? await captureRestoreSnapshot({ client, config, logger })
-    : null;
-
   const detector = new CodexStateDetector(config.extraWaitingInputPatterns);
-  const renderer = new RenderController({
-    client,
-    assetStore,
-    config,
-    logger,
-    restoreSnapshot
-  });
+  const sessionId = cliOptions.sessionId || createSessionId();
+  const registry = new SessionRegistry({ runtimeRoot: config.runtimeRoot, logger });
+  const rotator = ensureRotatorRunning({ config, logger });
 
-  logger.info({ command, args }, 'Starting wrapped Codex session');
-  renderer.setState(RUN_STATES.STARTING).catch((error) => {
-    logger.error({ err: error }, 'Failed to push starting state');
+  logger.info({ command, args, sessionId, rotatorPid: rotator.pid }, 'Starting wrapped Codex session');
+  registry.upsertSession({
+    sessionId,
+    state: RUN_STATES.STARTING,
+    command,
+    args,
+    cwd: process.cwd(),
+    pid: process.pid
   });
 
   const wrappedProcess = spawnWrappedProcess({ command, args, logger });
+  const heartbeat = setInterval(() => {
+    registry.heartbeat(sessionId);
+  }, 5000);
 
   let signalSent = null;
   const cleanupInput = wireInput(wrappedProcess);
@@ -55,8 +55,13 @@ export async function runCommand(childArgs, cliOptions) {
     const transition = detector.ingest(data);
     if (transition) {
       logger.debug(transition, 'Codex state transition detected');
-      renderer.setState(transition.nextState).catch((error) => {
-        logger.error({ err: error }, 'Failed to update render state');
+      registry.upsertSession({
+        sessionId,
+        state: transition.nextState,
+        command,
+        args,
+        cwd: process.cwd(),
+        pid: process.pid
       });
     }
   });
@@ -74,6 +79,7 @@ export async function runCommand(childArgs, cliOptions) {
     wrappedProcess.onExit(async ({ exitCode: code, signal }) => {
       process.removeListener('SIGINT', handleSignal);
       process.removeListener('SIGTERM', handleSignal);
+      clearInterval(heartbeat);
       cleanupInput();
       cleanupResize();
 
@@ -83,7 +89,14 @@ export async function runCommand(childArgs, cliOptions) {
       }
 
       try {
-        await renderer.finalize(transition?.nextState || (code === 0 ? RUN_STATES.COMPLETED : RUN_STATES.FAILED));
+        registry.upsertSession({
+          sessionId,
+          state: transition?.nextState || (code === 0 ? RUN_STATES.COMPLETED : RUN_STATES.FAILED),
+          command,
+          args,
+          cwd: process.cwd(),
+          pid: process.pid
+        });
         resolve(code);
       } catch (error) {
         reject(error);
@@ -92,6 +105,10 @@ export async function runCommand(childArgs, cliOptions) {
   });
 
   process.exitCode = exitCode;
+}
+
+function createSessionId() {
+  return crypto.randomBytes(2).toString('hex').toUpperCase();
 }
 
 function wireInput(wrappedProcess) {

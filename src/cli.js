@@ -7,6 +7,8 @@ import { snapshotCommand } from './commands/snapshot.js';
 import { pushCommand } from './commands/push.js';
 import { doctorCommand } from './commands/doctor.js';
 import { runCommand } from './commands/run.js';
+import { daemonCommand } from './commands/daemon.js';
+import { installWrapperCommand } from './commands/install-wrapper.js';
 
 const rawArgs = process.argv.slice(2);
 const dashDashIndex = rawArgs.indexOf('--');
@@ -34,6 +36,15 @@ program
   .option('--restore-mode <mode>', 'hold or restore')
   .option('--restore-delay-ms <ms>', 'Delay before restoring prior content')
   .option('--default-image-path <path>', 'Fallback PNG to restore after run')
+  .option('--session-id <id>', 'Session id badge to render on the device frame')
+  .option('--state-label <label>', 'Override the rendered state label')
+  .option('--runtime-root <path>', 'Runtime directory for session registry and rotator')
+  .option('--rotate-interval-ms <ms>', 'How long each session stays on Dot before rotating')
+  .option('--rotator-poll-ms <ms>', 'Background rotator poll interval')
+  .option('--rotate-max-sessions <n>', 'Maximum recent sessions to rotate')
+  .option('--terminal-session-ttl-ms <ms>', 'How long completed/failed sessions stay in the rotation')
+  .option('--active-session-stale-ms <ms>', 'How long to keep a live session without heartbeat')
+  .option('--result-hold-ms <ms>', 'How long to keep the latest terminal result on screen before releasing takeover')
   .option('--log-level <level>', 'Logger level');
 
 program
@@ -63,6 +74,18 @@ program
   .description('Wrap a Codex session and mirror state changes to Quote/0')
   .allowUnknownOption(true)
   .action(async (_, command) => handleAction(() => runCommand(childArgs, getCombinedOptions(command))));
+
+program
+  .command('daemon')
+  .description('Run the background Dot session rotator')
+  .action(async (_, command) => handleAction(() => daemonCommand(getCombinedOptions(command))));
+
+program
+  .command('install-wrapper')
+  .description('Install a zsh codex wrapper so typing codex auto-triggers dot-codex')
+  .option('--shell <shell>', 'Shell type', 'zsh')
+  .option('--real-codex-path <path>', 'Explicit path to the real codex binary')
+  .action(async (_, command) => handleAction(() => installWrapperCommand(getCombinedOptions(command))));
 
 await program.parseAsync(['node', 'dot-codex', ...commanderArgs]);
 

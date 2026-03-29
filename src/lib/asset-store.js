@@ -48,6 +48,10 @@ export class AssetStore {
     return this.base64Cache.get(filePath);
   }
 
+  readImageBuffer(filePath) {
+    return fs.readFileSync(filePath);
+  }
+
   assertFrame(framePath, state) {
     if (!fs.existsSync(framePath)) {
       throw new Error(`Missing frame for state '${state}': ${framePath}`);

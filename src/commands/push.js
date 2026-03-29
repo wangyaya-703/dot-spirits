@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import { bootstrapRuntime, resolveFramePath } from '../lib/command-helpers.js';
+import { composeFrameWithOverlay, getStateDisplayLabel } from '../lib/frame-overlay.js';
 
 export async function pushCommand(state, cliOptions) {
   if (!state && !cliOptions.file) {
@@ -17,7 +18,13 @@ export async function pushCommand(state, cliOptions) {
     throw new Error(`Push frame does not exist: ${framePath}`);
   }
 
-  const imageBase64 = fs.readFileSync(framePath).toString('base64');
+  const imageBuffer = fs.readFileSync(framePath);
+  const composed = composeFrameWithOverlay(imageBuffer, {
+    state,
+    stateLabel: cliOptions.stateLabel || getStateDisplayLabel(state),
+    sessionId: cliOptions.sessionId
+  });
+  const imageBase64 = composed.toString('base64');
   await client.pushImage({
     imageBase64,
     refreshNow: cliOptions.refreshNow !== false,
@@ -27,5 +34,5 @@ export async function pushCommand(state, cliOptions) {
     taskKey: config.taskKey
   });
 
-  logger.info({ state, framePath }, 'Manual push completed');
+  logger.info({ state, framePath, sessionId: cliOptions.sessionId }, 'Manual push completed');
 }

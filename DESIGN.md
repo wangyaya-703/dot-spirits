@@ -24,24 +24,24 @@ The goal is not generic cute animation. The goal is instant state recognition on
 ## Character Bible
 ### Base character
 - Species cue: Siamese cat
-- Build: slim body, long neck, narrow face, oversized triangular ears, thin tail
-- Face: dark mask implied through shape blocks, not grayscale
-- Eyes: almond-shaped, slightly intense, alert
-- Pose language: elegant, intelligent, curious, slightly dramatic
+- Build: cute mascot proportions, short body, short limbs, slightly oversized head, oversized triangular ears, tidy tail
+- Face: rounded face with Siamese mask implied through simple shape blocks, not grayscale
+- Eyes: huge round eyes, strong pupil contrast, immediately readable from far away
+- Pose language: curious, clingy, slightly dramatic, obviously cute before being elegant
 
 ### What makes it read as Siamese on a monochrome screen
 - Large angular ears
-- Narrow muzzle and long face
-- Slender torso instead of round kitten body
-- Tail is long and whip-like, not fluffy
-- Eye shape is sharp, not dot-eyes
+- Dark facial mask around eyes and nose area
+- Rounded but still slightly wedge-shaped face
+- Tail is neat and expressive, not fluffy
+- Big eyes plus Siamese ear silhouette
 - Facial mask is shown as a strong outline patch around eyes and nose bridge
 
 ### Emotional tone
 - Smart
-- Slightly opinionated
-- Sensitive to interruption
-- Busy but graceful
+- Slightly spoiled
+- Very expressive
+- Busy but still toy-like and lovable
 
 ## Pixel Style Rules
 ### Line work
@@ -115,97 +115,100 @@ The Siamese cat just woke up because it sensed work beginning.
 
 ## 2. Running
 ### Narrative
-The Siamese cat is actively working, inspecting, pawing, and thinking.
+The Siamese cat is actively occupied, like a real cat locked onto a moving toy.
 
 ### Scene
-- Cat leans over a tiny terminal slab or keyboard pad
-- One paw is on the work surface
+- Cat is playing with a yarn ball as if it is processing an active target
+- One paw is reaching, pinning, or nudging the yarn ball
 - Tail swings behind in a controlled S-curve
 
 ### Expression
 - Focused eyes
-- Slight brow angle
-- Tiny mouth line, no smile
+- Tiny determined mouth
+- Cute intensity, not technical seriousness
 
 ### Props
-- Pixel terminal panel
-- 2-3 small code blocks or scrolling lines
+- One yarn ball
+- Optional tiny floor line only
 
 ### Motion
-- Frame 1: paw down, eyes fixed
-- Frame 2: paw taps, tail shifts
-- Frame 3: terminal lines change, whiskers forward
-- Hold: concentrated working pose
+- Frame 1: cat crouches and locks onto the yarn ball
+- Frame 2: one paw springs forward and the yarn ball jolts away
+- Frame 3: the cat lunges farther and the yarn ball rolls more obviously
+- Hold: concentrated play-hunt pose
 
 ### Meaning
 "Agent is actively reading, thinking, or executing."
 
 ## 3. Waiting Input
 ### Narrative
-The Siamese cat has paused and is looking back at the human, expecting confirmation.
+The Siamese cat has paused in thought and needs help deciding.
 
 ### Scene
-- Cat turns body three-quarters toward viewer
-- One paw is raised mid-air
-- A dialogue card, checkbox, or confirm button hovers near the paw
+- Cat sits in a puzzled pose, slightly anthropomorphic
+- One paw is raised slightly in hesitation
+- A thought bubble hovers above with three icons: fish, freeze-dried treat, yarn ball
 
 ### Expression
 - Wide eyes
 - Slight head tilt
-- Ears forward
+- Ears attentive but uncertain
 
 ### Props
-- Confirmation card
-- Small prompt bubble with one large cursor block
+- Thought bubble
+- Three small option icons only
 
 ### Motion
-- Frame 1: cat turns toward viewer
-- Frame 2: paw lifts and card appears
-- Frame 3: blink or ear twitch while waiting
-- Hold: frozen question pose
+- Frame 1: cat settles into a thinking pose and the bubble appears
+- Frame 2: two icons appear in the bubble
+- Frame 3: the third icon appears and the cat raises one paw slightly
+- Hold: frozen puzzled choice pose
 
 ### Meaning
 "I need you now. Action is blocked until you answer."
 
 ## 4. Completed
 ### Narrative
-The Siamese cat finishes the task and settles with quiet pride.
+The Siamese cat finishes the task and becomes proudly expectant, as if asking for a snack reward.
 
 ### Scene
-- Cat sits neatly with tail wrapped around paws
-- Beside it is a completed paper, checkmark tablet, or tiny finished sketch
-- Body posture becomes symmetrical and calm
+- Cat sits upright with chest lifted
+- Tail rests neatly near the front paws
+- Beside it is a tiny freeze-dried treat icon or reward cube
+- Body posture is composed and slightly showy
+- A few tiny ribbon or confetti accents sit behind the cat to add celebration without stealing focus
 
 ### Expression
-- Eyes soft but confident
-- Subtle closed-mouth satisfaction
+- Eyes bright and proud
+- Small satisfied mouth, clearly asking for praise or treats
 
 ### Props
-- Checkmark tile
-- Finished page or tiny framed output
+- Freeze-dried treat icon or reward cube
+- Optional tiny ribbon/confetti accents in the background, but the treat cue matters more
 
 ### Motion
-- Frame 1: cat straightens from work pose
-- Frame 2: prop locks into completed state
-- Frame 3: tail wraps around paws
-- Hold: elegant resting victory pose
+- Frame 1: cat straightens and lifts its chest
+- Frame 2: the reward icon appears beside it
+- Frame 3: the cat settles into a proud asking posture
+- Hold: elegant reward-seeking victory pose
 
 ### Meaning
 "Task finished successfully."
 
 ## 5. Failed
 ### Narrative
-The Siamese cat hit a problem and is visibly annoyed, not devastated.
+The Siamese cat hit a problem and is visibly annoyed and puffed up, but still clearly the same character.
 
 ### Scene
-- Cat recoils slightly from a terminal slab
+- Cat stays recognizable as the same front-readable mascot but goes into a puffed-up, startled stance
 - Tail flicks sharply
 - One small error spark or X marker appears
 
 ### Expression
-- Narrowed eyes
+- Wide or tense eyes
 - Ears angled back
-- Mildly displeased face
+- Small annoyed mouth
+- Fur silhouette slightly puffed to show炸毛
 
 ### Props
 - Error tile with X
@@ -213,31 +216,15 @@ The Siamese cat hit a problem and is visibly annoyed, not devastated.
 
 ### Motion
 - Frame 1: cat notices issue
-- Frame 2: tail snaps and error icon appears
-- Frame 3: cat stiffens into alert frustration
-- Hold: guarded, irritated pose
+- Frame 2: fur silhouette puffs up and tail snaps
+- Frame 3: error icon appears as the cat stiffens into alert frustration
+- Hold: puffed-up, irritated pose
 
 ### Meaning
 "Task stopped with an error or bad outcome."
 
 ## 6. Cancelled
-### Narrative
-The Siamese cat stops mid-task and walks away with deliberate indifference.
-
-### Scene
-- Cat has turned sideways, half-exiting frame
-- Work surface remains behind it
-
-### Expression
-- Looking away, not at viewer
-
-### Props
-- Faded terminal block left behind
-
-### Motion
-- Frame 1: pause
-- Frame 2: body rotates away
-- Frame 3: tail exits last
+Not part of v1. Do not generate cancelled art in the first release.
 - Hold: partially off-screen
 
 ### Meaning

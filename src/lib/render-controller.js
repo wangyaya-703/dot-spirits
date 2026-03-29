@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { TERMINAL_STATES } from './constants.js';
+import { composeFrameWithOverlay } from './frame-overlay.js';
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -47,12 +48,14 @@ function abortableSleep(ms, signal) {
 }
 
 export class RenderController {
-  constructor({ client, assetStore, config, logger, restoreSnapshot = null }) {
+  constructor({ client, assetStore, config, logger, restoreSnapshot = null, sessionId = null, stateLabels = {} }) {
     this.client = client;
     this.assetStore = assetStore;
     this.config = config;
     this.logger = logger;
     this.restoreSnapshot = restoreSnapshot;
+    this.sessionId = sessionId;
+    this.stateLabels = stateLabels;
     this.lastPushAt = 0;
     this.lastFrameFingerprint = null;
     this.pendingState = null;
@@ -112,8 +115,10 @@ export class RenderController {
           break;
         }
 
+        const minIntervalMs = index === 0 ? this.config.minRefreshIntervalMs : this.config.frameIntervalMs;
+
         try {
-          await this.pushFrame(frames[index], { signal: targetSignal });
+          await this.pushFrame(frames[index], { signal: targetSignal, state: targetState, minIntervalMs });
         } catch (error) {
           if (isAbortError(error) && !this.isCurrentTarget(targetState, targetVersion)) {
             this.logger.debug({ targetState, supersededBy: this.pendingState }, 'Stopped stale state push before it reached the device');
@@ -121,19 +126,6 @@ export class RenderController {
           }
 
           throw error;
-        }
-
-        const isLastFrame = index === frames.length - 1;
-        if (!isLastFrame) {
-          try {
-            await abortableSleep(this.config.frameIntervalMs, targetSignal);
-          } catch (error) {
-            if (isAbortError(error) && !this.isCurrentTarget(targetState, targetVersion)) {
-              break;
-            }
-
-            throw error;
-          }
         }
       }
 
@@ -149,12 +141,19 @@ export class RenderController {
     }
 
     const now = Date.now();
+    const requiredInterval = options.minIntervalMs ?? this.config.minRefreshIntervalMs;
     const delta = now - this.lastPushAt;
-    if (delta < this.config.minRefreshIntervalMs) {
-      await abortableSleep(this.config.minRefreshIntervalMs - delta, options.signal);
+    if (delta < requiredInterval) {
+      await abortableSleep(requiredInterval - delta, options.signal);
     }
 
-    const imageBase64 = this.assetStore.readImageAsBase64(framePath);
+    const sourceBuffer = this.assetStore.readImageBuffer(framePath);
+    const renderedBuffer = composeFrameWithOverlay(sourceBuffer, {
+      state: options.state,
+      stateLabel: this.stateLabels?.[options.state],
+      sessionId: this.sessionId
+    });
+    const imageBase64 = renderedBuffer.toString('base64');
     const fingerprint = crypto.createHash('sha1').update(imageBase64).digest('hex');
     if (!options.force && fingerprint === this.lastFrameFingerprint) {
       this.logger.debug({ framePath }, 'Skipping duplicate frame push');

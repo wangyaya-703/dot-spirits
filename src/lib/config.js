@@ -10,7 +10,13 @@ import {
   DEFAULT_FRAME_INTERVAL_MS,
   DEFAULT_LOG_LEVEL,
   DEFAULT_MIN_REFRESH_INTERVAL_MS,
+  DEFAULT_ROTATE_INTERVAL_MS,
+  DEFAULT_ROTATOR_POLL_MS,
+  DEFAULT_ROTATE_MAX_SESSIONS,
+  DEFAULT_RESULT_HOLD_MS,
   DEFAULT_RESTORE_DELAY_MS,
+  DEFAULT_TERMINAL_SESSION_TTL_MS,
+  DEFAULT_ACTIVE_SESSION_STALE_MS,
   DEFAULT_TASK_TYPE
 } from './constants.js';
 
@@ -19,6 +25,7 @@ const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 const HOME_DIR = process.env.HOME || process.cwd();
 const DEFAULT_CONFIG_PATH = path.join(HOME_DIR, '.dot-codex', 'config.json');
+const DEFAULT_RUNTIME_ROOT = path.join(HOME_DIR, '.dot-codex', 'runtime');
 
 const configSchema = z.object({
   apiBaseUrl: z.string().url().default(API_BASE_URL),
@@ -48,6 +55,13 @@ const configSchema = z.object({
   restoreDelayMs: z.coerce.number().int().min(0).default(DEFAULT_RESTORE_DELAY_MS),
   defaultImagePath: z.string().min(1).optional(),
   assetTheme: z.string().min(1).default(DEFAULT_ASSET_THEME),
+  runtimeRoot: z.string().min(1).default(DEFAULT_RUNTIME_ROOT),
+  rotateIntervalMs: z.coerce.number().int().min(1000).default(DEFAULT_ROTATE_INTERVAL_MS),
+  rotatorPollMs: z.coerce.number().int().min(250).default(DEFAULT_ROTATOR_POLL_MS),
+  rotateMaxSessions: z.coerce.number().int().min(1).max(20).default(DEFAULT_ROTATE_MAX_SESSIONS),
+  terminalSessionTtlMs: z.coerce.number().int().min(0).default(DEFAULT_TERMINAL_SESSION_TTL_MS),
+  activeSessionStaleMs: z.coerce.number().int().min(1000).default(DEFAULT_ACTIVE_SESSION_STALE_MS),
+  resultHoldMs: z.coerce.number().int().min(0).default(DEFAULT_RESULT_HOLD_MS),
   logLevel: z.string().min(1).default(DEFAULT_LOG_LEVEL),
   extraWaitingInputPatterns: z.array(z.string()).default([])
 });
@@ -91,6 +105,13 @@ function buildEnvConfig() {
     restoreDelayMs: process.env.DOT_CODEX_RESTORE_DELAY_MS,
     defaultImagePath: process.env.DOT_CODEX_DEFAULT_IMAGE_PATH,
     assetTheme: process.env.DOT_CODEX_ASSET_THEME,
+    runtimeRoot: process.env.DOT_CODEX_RUNTIME_ROOT,
+    rotateIntervalMs: process.env.DOT_CODEX_ROTATE_INTERVAL_MS,
+    rotatorPollMs: process.env.DOT_CODEX_ROTATOR_POLL_MS,
+    rotateMaxSessions: process.env.DOT_CODEX_ROTATE_MAX_SESSIONS,
+    terminalSessionTtlMs: process.env.DOT_CODEX_TERMINAL_SESSION_TTL_MS,
+    activeSessionStaleMs: process.env.DOT_CODEX_ACTIVE_SESSION_STALE_MS,
+    resultHoldMs: process.env.DOT_CODEX_RESULT_HOLD_MS,
     logLevel: process.env.DOT_CODEX_LOG_LEVEL,
     extraWaitingInputPatterns: process.env.DOT_CODEX_WAITING_INPUT_PATTERNS
       ? process.env.DOT_CODEX_WAITING_INPUT_PATTERNS.split(',').map((value) => value.trim()).filter(Boolean)
@@ -104,6 +125,10 @@ export function getProjectRoot() {
 
 export function getDefaultConfigPath() {
   return DEFAULT_CONFIG_PATH;
+}
+
+export function getDefaultRuntimeRoot() {
+  return DEFAULT_RUNTIME_ROOT;
 }
 
 export function loadConfig({ configPath = DEFAULT_CONFIG_PATH, overrides = {} } = {}) {
@@ -120,6 +145,7 @@ export function loadConfig({ configPath = DEFAULT_CONFIG_PATH, overrides = {} } 
     ...parsed,
     configPath,
     assetRoot: path.join(PROJECT_ROOT, 'assets', 'themes', parsed.assetTheme),
+    runtimeRoot: path.resolve(parsed.runtimeRoot),
     defaultImagePath: parsed.defaultImagePath ? path.resolve(parsed.defaultImagePath) : undefined
   };
 }
