@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  getSessionDisplayName,
   hasActiveSessions,
+  selectActiveRenderableSessions,
   selectLatestTerminalSession,
   selectRenderableSessions
 } from '../src/lib/session-registry.js';
@@ -50,4 +52,32 @@ test('selectLatestTerminalSession returns the newest terminal state', () => {
 
   assert.equal(terminal.sessionId, 'C');
   assert.equal(terminal.state, 'failed');
+});
+
+test('selectActiveRenderableSessions excludes terminal sessions while active work exists', () => {
+  const now = 1_000_000;
+  const sessions = [
+    { sessionId: 'A', state: 'running', updatedAt: now - 1000, heartbeatAt: now - 1000 },
+    { sessionId: 'B', state: 'completed', updatedAt: now - 500, heartbeatAt: now - 500 },
+    { sessionId: 'C', state: 'waiting_input', updatedAt: now - 2000, heartbeatAt: now - 2000 }
+  ];
+
+  const activeRenderable = selectActiveRenderableSessions(sessions, {
+    now,
+    rotateMaxSessions: 5,
+    activeSessionStaleMs: 90_000
+  });
+
+  assert.deepEqual(activeRenderable.map((session) => session.sessionId), ['A', 'C']);
+});
+
+test('getSessionDisplayName prefers session name over raw id', () => {
+  assert.equal(
+    getSessionDisplayName({ sessionId: '99E1', sessionName: 'demo-project' }),
+    'DEMO-PROJECT'
+  );
+  assert.equal(
+    getSessionDisplayName({ sessionId: '99E1', sessionName: null }),
+    '99E1'
+  );
 });

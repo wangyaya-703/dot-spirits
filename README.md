@@ -43,7 +43,10 @@
 当前屏幕上展示的最终图会带两个元信息：
 
 - 状态名，例如 `RUNNING` / `WAIT` / `DONE`
-- 会话 `ID`，例如 `ID:WA17`
+- 会话标识，优先级如下：
+  - `--session-name` / `DOT_CODEX_SESSION_NAME`
+  - 当前项目目录名
+  - 短会话 `ID`
 
 ### 2.2 多会话轮播
 
@@ -81,7 +84,8 @@
 
 4. 终态会话
 - `completed` / `failed` / `cancelled`
-- 只保留一段时间
+- 只在没有活跃会话之后展示最新结果态
+- 不会在活跃轮播期间插播旧 `DONE`
 - 不会无限占用设备
 
 ### 2.4 接管与释放
@@ -122,6 +126,11 @@ Dot 就进入 Codex takeover 模式。
 
 - `dot-codex` 不再继续强制显示 Codex 内容
 - Dot 会在它自己的后续内容轮播时机里回到原本内容
+
+补充：
+
+- 如果此时还存在别的活跃会话，旧的 `completed/done` 不会混进轮播
+- `done` 只会在“所有活跃会话结束之后”进入结果态展示窗口
 
 ## 3. 与 Dot 原生循环内容的关系
 
@@ -261,6 +270,7 @@ DOT_CODEX_ACTIVE_SESSION_STALE_MS=90000
 DOT_CODEX_RESULT_HOLD_MS=15000
 DOT_CODEX_RESTORE_MODE=hold
 DOT_CODEX_RESTORE_DELAY_MS=15000
+DOT_CODEX_SESSION_NAME=
 ```
 
 ### 7.2 重要配置解释
@@ -321,6 +331,12 @@ node src/cli.js install-wrapper
 node src/cli.js run -- codex
 ```
 
+查看当前会话池和 rotator 状态：
+
+```bash
+node src/cli.js sessions
+```
+
 启动后台 rotator：
 
 ```bash
@@ -353,6 +369,7 @@ npm test
 - `frame overlay`
 - `RenderController`
 - `SessionRegistry` 选择逻辑
+- `sessions` 相关选择逻辑
 - `CodexStateDetector`
 
 ## 10. 视觉资源

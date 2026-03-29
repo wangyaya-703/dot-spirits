@@ -23,14 +23,14 @@ export function getStateDisplayLabel(state, fallback) {
   return STATE_LABELS[state] || String(state || '').replaceAll('_', ' ').toUpperCase();
 }
 
-export function composeFrameWithOverlay(imageBuffer, { state, stateLabel, sessionId } = {}) {
-  if (!sessionId && !stateLabel && !state) {
+export function composeFrameWithOverlay(imageBuffer, { state, stateLabel, sessionId, sessionName } = {}) {
+  const sessionText = buildSessionBadge({ sessionId, sessionName });
+  if (!sessionText && !stateLabel && !state) {
     return imageBuffer;
   }
 
   const png = PNG.sync.read(imageBuffer);
   const labelText = getStateDisplayLabel(state, stateLabel);
-  const sessionText = sessionId ? `ID:${String(sessionId).toUpperCase()}` : '';
 
   const footerY = png.height - FOOTER_HEIGHT - 8;
   drawRect(png, 8, footerY, png.width - 16, FOOTER_HEIGHT, 255);
@@ -48,4 +48,24 @@ export function composeFrameWithOverlay(imageBuffer, { state, stateLabel, sessio
   }
 
   return PNG.sync.write(png);
+}
+
+function buildSessionBadge({ sessionId, sessionName }) {
+  const normalizedName = String(sessionName || '')
+    .trim()
+    .replace(/[^a-zA-Z0-9:_-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .toUpperCase();
+  const normalizedId = String(sessionId || '').trim().toUpperCase();
+
+  if (normalizedName && normalizedId) {
+    return `${normalizedName.slice(0, 8)}-${normalizedId}`;
+  }
+
+  if (normalizedName) {
+    return normalizedName.slice(0, 12);
+  }
+
+  return normalizedId ? `ID:${normalizedId}` : '';
 }

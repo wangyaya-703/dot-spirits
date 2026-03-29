@@ -37,6 +37,7 @@ program
   .option('--restore-delay-ms <ms>', 'Delay before restoring prior content')
   .option('--default-image-path <path>', 'Fallback PNG to restore after run')
   .option('--session-id <id>', 'Session id badge to render on the device frame')
+  .option('--session-name <name>', 'Human-readable session name to prefer over the raw id')
   .option('--state-label <label>', 'Override the rendered state label')
   .option('--runtime-root <path>', 'Runtime directory for session registry and rotator')
   .option('--rotate-interval-ms <ms>', 'How long each session stays on Dot before rotating')
@@ -79,6 +80,11 @@ program
   .command('daemon')
   .description('Run the background Dot session rotator')
   .action(async (_, command) => handleAction(() => daemonCommand(getCombinedOptions(command))));
+
+program
+  .command('sessions')
+  .description('Inspect the current runtime session pool and rotator state')
+  .action(async (_, command) => handleAction(() => import('./commands/sessions.js').then(({ sessionsCommand }) => sessionsCommand(getCombinedOptions(command)))));
 
 program
   .command('install-wrapper')

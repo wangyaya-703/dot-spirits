@@ -5,6 +5,7 @@ import {
   SessionRegistry,
   defaultSessionLabel,
   hasActiveSessions,
+  selectActiveRenderableSessions,
   selectLatestTerminalSession,
   selectRenderableSessions
 } from '../lib/session-registry.js';
@@ -33,7 +34,10 @@ export async function daemonCommand(cliOptions) {
     sessionOrderCursor: 0
   };
 
-  const cleanup = () => registry.clearPid();
+  const cleanup = () => {
+    registry.clearPid();
+    registry.clearStatus();
+  };
   process.once('SIGINT', cleanup);
   process.once('SIGTERM', cleanup);
   process.once('exit', cleanup);
@@ -63,6 +67,13 @@ export async function daemonCommand(cliOptions) {
       now,
       activeSessionStaleMs: config.activeSessionStaleMs
     });
+    const activeSessions = active
+      ? selectActiveRenderableSessions(sessions, {
+          now,
+          rotateMaxSessions: config.rotateMaxSessions,
+          activeSessionStaleMs: config.activeSessionStaleMs
+        })
+      : [];
 
     if (!active) {
       const latestTerminal = selectLatestTerminalSession(sessions);
@@ -89,11 +100,13 @@ export async function daemonCommand(cliOptions) {
         resetTakeoverState(state);
       }
 
+      publishStatus({ registry, state, sessions, activeSessions, mode: 'idle' });
+
       await sleep(config.rotatorPollMs);
       continue;
     }
 
-    const target = selectNextSession({ state, sessions, now });
+    const target = selectNextSession({ state, sessions: activeSessions, now });
     const signature = `${target.sessionId}:${target.state}:${target.sequenceVersion}`;
     const hasSeenSignature = state.displayedSignatureBySession.get(target.sessionId) === signature;
     const shouldAnimate = !hasSeenSignature;
@@ -114,6 +127,8 @@ export async function daemonCommand(cliOptions) {
       state.currentSessionId = target.sessionId;
       state.currentSlotEndsAt = Date.now() + config.rotateIntervalMs;
     }
+
+    publishStatus({ registry, state, sessions, activeSessions, mode: 'takeover' });
 
     await sleep(config.rotatorPollMs);
   }
@@ -171,7 +186,8 @@ async function pushSessionFrames({ client, assetStore, config, logger, session, 
     const rendered = composeFrameWithOverlay(buffer, {
       state: session.state,
       stateLabel: session.stateLabel || defaultSessionLabel(session.state),
-      sessionId: session.sessionId
+      sessionId: session.sessionId,
+      sessionName: session.sessionName
     });
 
     const minIntervalMs = index === 0 ? config.minRefreshIntervalMs : config.frameIntervalMs;
@@ -203,4 +219,16 @@ async function pushSessionFrames({ client, assetStore, config, logger, session, 
       frame: frames[index]
     }, 'Rotator pushed frame to Quote/0');
   }
+}
+
+function publishStatus({ registry, state, sessions, activeSessions, mode }) {
+  registry.writeStatus({
+    updatedAt: Date.now(),
+    mode,
+    currentSessionId: state.currentSessionId,
+    currentSlotEndsAt: state.currentSlotEndsAt,
+    renderableSessionIds: sessions.map((session) => session.sessionId),
+    activeSessionIds: activeSessions.map((session) => session.sessionId),
+    lastFingerprint: state.lastFingerprint
+  });
 }

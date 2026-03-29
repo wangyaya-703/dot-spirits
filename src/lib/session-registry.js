@@ -11,6 +11,7 @@ export class SessionRegistry {
     this.logger = logger;
     this.sessionsRoot = path.join(runtimeRoot, 'sessions');
     this.pidFile = path.join(runtimeRoot, 'rotator.pid');
+    this.statusFile = path.join(runtimeRoot, 'status.json');
     fs.mkdirSync(this.sessionsRoot, { recursive: true });
   }
 
@@ -63,13 +64,15 @@ export class SessionRegistry {
     args,
     cwd,
     pid,
-    stateLabel
+    stateLabel,
+    sessionName
   }) {
     const now = Date.now();
     const current = this.readSession(sessionId);
     const stateChanged = current?.state !== state;
     const payload = {
       sessionId,
+      sessionName: sessionName || current?.sessionName || null,
       state,
       stateLabel: stateLabel || null,
       command,
@@ -134,6 +137,31 @@ export class SessionRegistry {
       return null;
     }
   }
+
+  writeStatus(payload) {
+    fs.mkdirSync(this.runtimeRoot, { recursive: true });
+    const tmp = `${this.statusFile}.${process.pid}.${Date.now()}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(payload, null, 2));
+    fs.renameSync(tmp, this.statusFile);
+  }
+
+  readStatus() {
+    if (!fs.existsSync(this.statusFile)) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(fs.readFileSync(this.statusFile, 'utf8'));
+    } catch {
+      return null;
+    }
+  }
+
+  clearStatus() {
+    if (fs.existsSync(this.statusFile)) {
+      fs.unlinkSync(this.statusFile);
+    }
+  }
 }
 
 export function isPidRunning(pid) {
@@ -188,6 +216,21 @@ export function selectRenderableSessions(sessions, {
   return filtered;
 }
 
+export function selectActiveRenderableSessions(sessions, {
+  now = Date.now(),
+  rotateMaxSessions,
+  activeSessionStaleMs
+}) {
+  return sessions
+    .filter((session) => session?.sessionId && session?.state)
+    .filter((session) =>
+      ACTIVE_STATES.has(session.state) &&
+      now - (session.heartbeatAt || session.updatedAt || 0) <= activeSessionStaleMs
+    )
+    .sort((left, right) => (right.updatedAt || 0) - (left.updatedAt || 0))
+    .slice(0, rotateMaxSessions);
+}
+
 export function hasActiveSessions(sessions, { now = Date.now(), activeSessionStaleMs }) {
   return sessions.some((session) =>
     ACTIVE_STATES.has(session.state) && now - (session.heartbeatAt || session.updatedAt || 0) <= activeSessionStaleMs
@@ -217,4 +260,26 @@ export function defaultSessionLabel(state) {
     default:
       return String(state || '').toUpperCase();
   }
+}
+
+export function getSessionDisplayName(session, { maxLength = 12 } = {}) {
+  const preferred = session?.sessionName || session?.sessionId || '';
+  const normalized = String(preferred)
+    .trim()
+    .replace(/[^a-zA-Z0-9:_-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .toUpperCase();
+
+  if (!normalized) {
+    return session?.sessionId ? String(session.sessionId).toUpperCase() : '';
+  }
+
+  if (!session?.sessionName || normalized === String(session.sessionId || '').toUpperCase()) {
+    return normalized.slice(0, maxLength);
+  }
+
+  const suffix = String(session.sessionId || '').toUpperCase();
+  const combined = suffix ? `${normalized}-${suffix}` : normalized;
+  return combined.slice(0, maxLength);
 }

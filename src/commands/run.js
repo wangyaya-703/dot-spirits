@@ -21,6 +21,7 @@ export async function runCommand(childArgs, cliOptions) {
   const [command = 'codex', ...args] = childArgs.length > 0 ? childArgs : ['codex'];
   const detector = new CodexStateDetector(config.extraWaitingInputPatterns);
   const sessionId = cliOptions.sessionId || createSessionId();
+  const sessionName = resolveSessionName({ cliOptions, config, cwd: process.cwd(), sessionId });
   const registry = new SessionRegistry({ runtimeRoot: config.runtimeRoot, logger });
   const rotator = ensureRotatorRunning({ config, logger });
 
@@ -31,7 +32,8 @@ export async function runCommand(childArgs, cliOptions) {
     command,
     args,
     cwd: process.cwd(),
-    pid: process.pid
+    pid: process.pid,
+    sessionName
   });
 
   const wrappedProcess = spawnWrappedProcess({ command, args, logger });
@@ -61,7 +63,8 @@ export async function runCommand(childArgs, cliOptions) {
         command,
         args,
         cwd: process.cwd(),
-        pid: process.pid
+        pid: process.pid,
+        sessionName
       });
     }
   });
@@ -95,7 +98,8 @@ export async function runCommand(childArgs, cliOptions) {
           command,
           args,
           cwd: process.cwd(),
-          pid: process.pid
+          pid: process.pid,
+          sessionName
         });
         resolve(code);
       } catch (error) {
@@ -109,6 +113,20 @@ export async function runCommand(childArgs, cliOptions) {
 
 function createSessionId() {
   return crypto.randomBytes(2).toString('hex').toUpperCase();
+}
+
+function resolveSessionName({ cliOptions, config, cwd, sessionId }) {
+  const explicit = cliOptions.sessionName || config.sessionName;
+  if (explicit) {
+    return String(explicit).trim();
+  }
+
+  const base = path.basename(cwd || '');
+  if (base && base !== '.' && base !== path.sep) {
+    return base;
+  }
+
+  return sessionId;
 }
 
 function wireInput(wrappedProcess) {

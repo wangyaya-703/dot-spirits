@@ -22,7 +22,8 @@ export async function pushCommand(state, cliOptions) {
   const composed = composeFrameWithOverlay(imageBuffer, {
     state,
     stateLabel: cliOptions.stateLabel || getStateDisplayLabel(state),
-    sessionId: cliOptions.sessionId
+    sessionId: cliOptions.sessionId,
+    sessionName: cliOptions.sessionName
   });
   const imageBase64 = composed.toString('base64');
   await client.pushImage({
