@@ -24,7 +24,7 @@ export async function runCommand(childArgs, cliOptions) {
   const registry = new SessionRegistry({ runtimeRoot: config.runtimeRoot, logger });
   const rotator = ensureRotatorRunning({ config, logger });
 
-  logger.info({ command, args, sessionId, rotatorPid: rotator.pid }, 'Starting wrapped Codex session');
+  logger.debug({ command, args, sessionId, rotatorPid: rotator.pid }, 'Starting wrapped Codex session');
   registry.upsertSession({
     sessionId,
     state: RUN_STATES.STARTING,
@@ -178,17 +178,17 @@ function spawnWrappedProcess({ command, args, logger }) {
       }
     };
   } catch (error) {
-    logger.warn({ err: error, command: resolvedCommand }, 'PTY spawn failed, falling back to Python pseudo terminal bridge');
+    logger.debug({ err: error, command: resolvedCommand }, 'PTY spawn failed, falling back to Python pseudo terminal bridge');
 
     try {
       return spawnPythonPtyProcess(resolvedCommand, args);
     } catch (pythonError) {
-      logger.warn({ err: pythonError, command: resolvedCommand }, 'Python pseudo terminal failed, falling back to script-based pseudo terminal');
+      logger.debug({ err: pythonError, command: resolvedCommand }, 'Python pseudo terminal failed, falling back to script-based pseudo terminal');
 
       try {
         return spawnScriptProcess(resolvedCommand, args);
       } catch (scriptError) {
-        logger.warn({ err: scriptError, command: resolvedCommand }, 'script pseudo terminal failed, falling back to plain child_process spawn');
+        logger.debug({ err: scriptError, command: resolvedCommand }, 'script pseudo terminal failed, falling back to plain child_process spawn');
         return spawnFallbackProcess(resolvedCommand, args);
       }
     }
