@@ -39,7 +39,7 @@ export function composeFrameWithOverlay(imageBuffer, { state, stateLabel, sessio
   }
 
   const png = PNG.sync.read(imageBuffer);
-  const labelText = getStateDisplayLabel(state, stateLabel);
+  const labelText = compactStateLabel(state, stateLabel);
 
   const footerY = png.height - FOOTER_HEIGHT - 8;
   drawRect(png, 8, footerY, png.width - 16, FOOTER_HEIGHT, 255);
