@@ -91,11 +91,11 @@
 3. 其他活跃会话
 - `starting` / `running`
 - 进入轮播池，按顺序展示
+- 新开对话或刚发生状态变化的活跃会话，会先获得一段稳定焦点时间，避免刚切入就被别的内容打断
 
 4. 终态会话
 - `completed` / `failed` / `cancelled`
-- 新进入终态的那一次，会被提升成一次性“结果事件”
-- 如果当时还有别的活跃会话，这个新结果仍会被展示一次
+- 只有在没有活跃会话时，最新结果态才会被短时保留展示
 - 展示窗口过后会自动从 runtime 清理掉
 - 旧 `DONE` 不会反复混进轮播
 
@@ -118,7 +118,7 @@ Dot 就进入 Codex takeover 模式。
 - 当前展示会话状态变化：立即推屏
 - 其他会话：统一进入 rotator 调度
 - `waiting_input`：允许抢占
-- 新进入 `completed/failed` 的结果态：允许提升一次，确保首次完成/失败可见
+- 活跃会话存在时，不再插播旧 `done/failed/cancelled`
 
 #### 退出接管
 
@@ -276,20 +276,24 @@ DOT_CODEX_TASK_KEY=image_task_1
 DOT_CODEX_ASSET_THEME=siamese-sticker
 DOT_CODEX_BORDER=0
 DOT_CODEX_DITHER_TYPE=NONE
-DOT_CODEX_MIN_REFRESH_INTERVAL_MS=1500
-DOT_CODEX_FRAME_INTERVAL_MS=2200
+DOT_CODEX_MIN_REFRESH_INTERVAL_MS=2200
+DOT_CODEX_FRAME_INTERVAL_MS=3200
 DOT_CODEX_MAX_ENTER_FRAMES=2
 DOT_CODEX_RUNNING_IDLE_MS=9000
-DOT_CODEX_RUNNING_FRAME_CYCLE_MS=18000
-DOT_CODEX_ROTATE_INTERVAL_MS=12000
+DOT_CODEX_RUNNING_FRAME_CYCLE_MS=0
+DOT_CODEX_ROTATE_INTERVAL_MS=24000
 DOT_CODEX_ROTATOR_POLL_MS=1000
 DOT_CODEX_ROTATE_MAX_SESSIONS=5
 DOT_CODEX_ACTIVE_SESSION_STALE_MS=90000
+DOT_CODEX_ACTIVE_SESSION_FOCUS_MS=15000
+DOT_CODEX_STARTING_DISPLAY_DELAY_MS=4000
+DOT_CODEX_STATE_CHANGE_SETTLE_MS=6000
 DOT_CODEX_RESULT_HOLD_MS=15000
 DOT_CODEX_TERMINAL_PROMOTION_MS=12000
-DOT_CODEX_TAKEOVER_REASSERT_MS=12000
+DOT_CODEX_TAKEOVER_REASSERT_MS=24000
 DOT_CODEX_RESTORE_MODE=hold
 DOT_CODEX_RESTORE_DELAY_MS=15000
+DOT_CODEX_LOG_FILE=/Users/bytedance/.dot-codex/runtime/dot-codex.log
 DOT_CODEX_SESSION_NAME=
 ```
 
@@ -307,26 +311,41 @@ DOT_CODEX_SESSION_NAME=
 - `DOT_CODEX_ACTIVE_SESSION_STALE_MS`
   - 活跃会话多久没有心跳就视为失效
 
+- `DOT_CODEX_ACTIVE_SESSION_FOCUS_MS`
+  - 新开对话或刚变更状态的活跃会话，优先独占屏幕多久再恢复普通轮播
+
+- `DOT_CODEX_STARTING_DISPLAY_DELAY_MS`
+  - 新 session 刚启动时，先等多久再决定要不要显示 `starting` 这套画
+  - 如果它很快就进入 `running`，就直接跳过 `starting`，避免两套画连着切
+
+- `DOT_CODEX_STATE_CHANGE_SETTLE_MS`
+  - 同一个活跃会话短时间内连续跳状态时，先稳住当前画面多久再决定是否重绘
+  - 主要用于抑制 `starting -> running` 这类连跳导致的频繁推屏
+
 - `DOT_CODEX_RESULT_HOLD_MS`
   - 当所有活跃会话结束后，最新结果态在释放接管前还能保留多久
 
 - `DOT_CODEX_TERMINAL_PROMOTION_MS`
-  - 新进入 `completed/failed` 的会话，在还有活跃会话时可被提升展示多久
+  - 单个会话在内部从 `done` 回到 `idle` 的过渡窗口
 
 - `DOT_CODEX_TAKEOVER_REASSERT_MS`
   - takeover 期间多久检查一次设备当前图是否已被其他 Dot 内容盖掉
   - 只有确认被盖掉时，才会重推当前 `hold` 帧抢回
 
+- `DOT_CODEX_LOG_FILE`
+  - rotator 和 run 命令的结构化日志文件
+  - 默认写到 [`~/.dot-codex/runtime/dot-codex.log`](/Users/bytedance/.dot-codex/runtime/dot-codex.log)
+
 - `DOT_CODEX_MAX_ENTER_FRAMES`
   - 每次状态切换最多播放几张 `enter` 帧
-  - 默认只播放 `2` 张，再进入 `hold`
+  - 默认播放 `2` 张，再进入 `hold`
 
 - `DOT_CODEX_RUNNING_IDLE_MS`
   - `running` 安静多久后，被视为这一轮任务流已经结束，进入 `done`
 
 - `DOT_CODEX_RUNNING_FRAME_CYCLE_MS`
   - 长时间保持 `running` 时，多久切换一次另一张 `running` 图
-  - 这是低频换图，不会重播整段 `enter` 动画
+  - 默认关闭，不主动为了“活着感”去轮换 `running` 图
 
 ## 8. 常用命令
 

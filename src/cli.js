@@ -39,6 +39,7 @@ program
   .option('--restore-mode <mode>', 'hold or restore')
   .option('--restore-delay-ms <ms>', 'Delay before restoring prior content')
   .option('--default-image-path <path>', 'Fallback PNG to restore after run')
+  .option('--log-file <path>', 'Path to the persistent dot-codex log file')
   .option('--session-id <id>', 'Session id badge to render on the device frame')
   .option('--session-name <name>', 'Human-readable session name to prefer over the raw id')
   .option('--state-label <label>', 'Override the rendered state label')
@@ -48,8 +49,11 @@ program
   .option('--rotate-max-sessions <n>', 'Maximum recent sessions to rotate')
   .option('--terminal-session-ttl-ms <ms>', 'How long completed/failed sessions stay in the rotation')
   .option('--active-session-stale-ms <ms>', 'How long to keep a live session without heartbeat')
+  .option('--active-session-focus-ms <ms>', 'How long a newly changed active session keeps focus before normal rotation resumes')
+  .option('--starting-display-delay-ms <ms>', 'How long to wait before showing starting artwork for a newly started session')
+  .option('--state-change-settle-ms <ms>', 'How long to wait before repainting rapid active-state changes on the same session')
   .option('--result-hold-ms <ms>', 'How long to keep the latest terminal result on screen before releasing takeover')
-  .option('--terminal-promotion-ms <ms>', 'How long a newly completed/failed session is treated as a promotable event')
+  .option('--terminal-promotion-ms <ms>', 'How long a completed session stays in its done window before it settles back to idle')
   .option('--takeover-reassert-ms <ms>', 'How often takeover reasserts the current hold frame to override other Dot content')
   .option('--log-level <level>', 'Logger level');
 

@@ -1,16 +1,27 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import pino from 'pino';
 import { DEFAULT_LOG_LEVEL } from './constants.js';
 
-export function createLogger(level = process.env.DOT_CODEX_LOG_LEVEL || DEFAULT_LOG_LEVEL) {
+export function createLogger({
+  level = process.env.DOT_CODEX_LOG_LEVEL || DEFAULT_LOG_LEVEL,
+  logFilePath
+} = {}) {
+  const streams = [{ stream: process.stdout }];
+  if (logFilePath) {
+    fs.mkdirSync(path.dirname(logFilePath), { recursive: true });
+    streams.push({
+      stream: pino.destination({
+        dest: logFilePath,
+        mkdir: true,
+        sync: false
+      })
+    });
+  }
+
   return pino({
     level,
-    transport: process.stdout.isTTY
-      ? {
-          target: 'pino/file',
-          options: { destination: 1 }
-        }
-      : undefined,
     base: undefined,
     timestamp: pino.stdTimeFunctions.isoTime
-  });
+  }, pino.multistream(streams));
 }

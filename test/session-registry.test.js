@@ -4,6 +4,7 @@ import {
   getSessionDisplayName,
   hasActiveSessions,
   selectActiveRenderableSessions,
+  selectFocusedActiveSession,
   selectLatestTerminalSession,
   selectPromotableTerminalSession,
   selectRenderableSessions
@@ -96,4 +97,18 @@ test('selectPromotableTerminalSession returns only fresh unseen terminal events'
   });
 
   assert.equal(session.sessionId, 'C');
+});
+
+test('selectFocusedActiveSession prefers the freshest active change and waiting_input', () => {
+  const now = 1_000_000;
+  const session = selectFocusedActiveSession([
+    { sessionId: 'A', state: 'running', updatedAt: now - 3_000, lastStateChangeAt: now - 3_000 },
+    { sessionId: 'B', state: 'waiting_input', updatedAt: now - 4_000, lastStateChangeAt: now - 4_000 },
+    { sessionId: 'C', state: 'running', updatedAt: now - 1_000, lastStateChangeAt: now - 1_000 }
+  ], {
+    now,
+    activeSessionFocusMs: 5_000
+  });
+
+  assert.equal(session.sessionId, 'B');
 });

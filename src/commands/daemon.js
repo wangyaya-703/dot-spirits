@@ -7,11 +7,11 @@ import {
   hasActiveSessions,
   pruneExpiredSessions,
   selectActiveRenderableSessions,
+  selectFocusedActiveSession,
   selectLatestTerminalSession,
-  selectPromotableTerminalSession,
   selectRenderableSessions
 } from '../lib/session-registry.js';
-import { RUN_STATES } from '../lib/constants.js';
+import { ACTIVE_STATES, RUN_STATES } from '../lib/constants.js';
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -49,8 +49,17 @@ export async function daemonCommand(cliOptions) {
 
   logger.info({
     runtimeRoot: config.runtimeRoot,
+    logFilePath: config.logFilePath,
     rotateIntervalMs: config.rotateIntervalMs,
-    rotateMaxSessions: config.rotateMaxSessions
+    rotateMaxSessions: config.rotateMaxSessions,
+    minRefreshIntervalMs: config.minRefreshIntervalMs,
+    frameIntervalMs: config.frameIntervalMs,
+    maxEnterFrames: config.maxEnterFrames,
+    activeSessionFocusMs: config.activeSessionFocusMs,
+    startingDisplayDelayMs: config.startingDisplayDelayMs,
+    stateChangeSettleMs: config.stateChangeSettleMs,
+    runningFrameCycleMs: config.runningFrameCycleMs,
+    takeoverReassertMs: config.takeoverReassertMs
   }, 'Dot Codex rotator started');
 
   while (true) {
@@ -71,6 +80,12 @@ export async function daemonCommand(cliOptions) {
     });
 
     if (sessions.length === 0) {
+      if (state.currentSessionId || state.lastOwnedImageUrl) {
+        logger.info({
+          previousSessionId: state.currentSessionId,
+          lastOwnedImageUrl: state.lastOwnedImageUrl
+        }, 'No renderable sessions remain; releasing Dot takeover state');
+      }
       resetTakeoverState(state);
       await sleep(config.rotatorPollMs);
       continue;
@@ -87,11 +102,10 @@ export async function daemonCommand(cliOptions) {
           activeSessionStaleMs: config.activeSessionStaleMs
         })
       : [];
-    const promotedTerminal = active
-      ? selectPromotableTerminalSession(sessions, {
+    const focusedActive = active
+      ? selectFocusedActiveSession(activeSessions, {
           now,
-          terminalPromotionMs: config.terminalPromotionMs,
-          displayedSignatureBySession: state.displayedSignatureBySession
+          activeSessionFocusMs: config.activeSessionFocusMs
         })
       : null;
 
@@ -111,12 +125,19 @@ export async function daemonCommand(cliOptions) {
             logger,
             session: latestTerminal,
             includeEnter: !hasSeenSignature,
+            reason: hasSeenSignature ? 'latest_terminal_reassert' : 'latest_terminal_result',
             runtimeState: state
           });
           state.displayedSignatureBySession.set(latestTerminal.sessionId, signature);
           state.currentSessionId = latestTerminal.sessionId;
+          state.lastSessionState = latestTerminal.state;
         }
       } else {
+        if (state.currentSessionId) {
+          logger.info({
+            previousSessionId: state.currentSessionId
+          }, 'Latest terminal result expired; releasing Dot takeover state');
+        }
         resetTakeoverState(state);
       }
 
@@ -126,7 +147,7 @@ export async function daemonCommand(cliOptions) {
       continue;
     }
 
-    const target = selectNextSession({ state, sessions: activeSessions, promotedTerminal, now });
+    const target = selectNextSession({ state, sessions: activeSessions, focusedActive, now });
     const signature = `${target.sessionId}:${target.state}:${target.sequenceVersion}`;
     const hasSeenSignature = state.displayedSignatureBySession.get(target.sessionId) === signature;
     const shouldAnimate = !hasSeenSignature;
@@ -149,6 +170,45 @@ export async function daemonCommand(cliOptions) {
       config.runningFrameCycleMs > 0 &&
       now - state.lastPushAt >= config.runningFrameCycleMs
     );
+    const shouldDeferActiveStatePush = shouldDeferRapidActiveStatePush({
+      runtimeState: state,
+      target,
+      isSessionSwitch,
+      shouldAnimate,
+      now,
+      config
+    });
+    const shouldDeferStartingPush = shouldDeferStartingDisplay({
+      target,
+      shouldAnimate,
+      now,
+      config
+    });
+
+    if (shouldDeferStartingPush) {
+      logger.info({
+        sessionId: target.sessionId,
+        state: target.state,
+        lastStateChangeAt: target.lastStateChangeAt || target.updatedAt,
+        startingDisplayDelayMs: config.startingDisplayDelayMs
+      }, 'Deferring starting artwork while the session is still warming up');
+      publishStatus({ registry, state, sessions, activeSessions, promotedTerminal: null, mode: 'takeover' });
+      await sleep(config.rotatorPollMs);
+      continue;
+    }
+
+    if (shouldDeferActiveStatePush) {
+      logger.info({
+        sessionId: target.sessionId,
+        previousState: state.lastSessionState,
+        nextState: target.state,
+        lastPushAt: state.lastPushAt,
+        stateChangeSettleMs: config.stateChangeSettleMs
+      }, 'Deferring rapid active-state repaint');
+      publishStatus({ registry, state, sessions, activeSessions, promotedTerminal: null, mode: 'takeover' });
+      await sleep(config.rotatorPollMs);
+      continue;
+    }
 
     if (isSessionSwitch || shouldAnimate || shouldReassert || shouldCycleRunningFrame) {
       await pushSessionFrames({
@@ -160,6 +220,7 @@ export async function daemonCommand(cliOptions) {
         includeEnter: shouldAnimate,
         runningLoopOnly: shouldCycleRunningFrame,
         forceDuplicateHold: shouldReassert,
+        reason: summarizePushReason({ isSessionSwitch, shouldAnimate, shouldReassert, shouldCycleRunningFrame }),
         runtimeState: state
       });
 
@@ -171,7 +232,7 @@ export async function daemonCommand(cliOptions) {
       }
     }
 
-    publishStatus({ registry, state, sessions, activeSessions, promotedTerminal, mode: 'takeover' });
+    publishStatus({ registry, state, sessions, activeSessions, promotedTerminal: null, mode: 'takeover' });
 
     await sleep(config.rotatorPollMs);
   }
@@ -183,20 +244,17 @@ function resetTakeoverState(state) {
   state.lastOwnedImageUrl = null;
 }
 
-function selectNextSession({ state, sessions, promotedTerminal, now }) {
+export function selectNextSession({ state, sessions, focusedActive = null, now }) {
   if (sessions.length === 1) {
-    const soleSession = sessions[0];
-    if (promotedTerminal && promotedTerminal.sessionId !== soleSession.sessionId) {
-      return promotedTerminal;
-    }
     state.sessionOrderCursor = 0;
-    return soleSession;
+    return sessions[0];
   }
 
   const currentIndex = sessions.findIndex((session) => session.sessionId === state.currentSessionId);
   if (currentIndex === -1) {
-    state.sessionOrderCursor = 0;
-    return sessions[0];
+    const fallback = focusedActive || sessions[0];
+    state.sessionOrderCursor = sessions.findIndex((session) => session.sessionId === fallback.sessionId);
+    return fallback;
   }
 
   const current = sessions[currentIndex];
@@ -212,13 +270,14 @@ function selectNextSession({ state, sessions, promotedTerminal, now }) {
     return urgent;
   }
 
+  if (focusedActive && focusedActive.sessionId !== current.sessionId) {
+    state.sessionOrderCursor = sessions.findIndex((session) => session.sessionId === focusedActive.sessionId);
+    return focusedActive;
+  }
+
   if (currentChanged) {
     state.sessionOrderCursor = currentIndex;
     return current;
-  }
-
-  if (promotedTerminal && promotedTerminal.sessionId !== current.sessionId) {
-    return promotedTerminal;
   }
 
   if (now < state.currentSlotEndsAt) {
@@ -231,7 +290,63 @@ function selectNextSession({ state, sessions, promotedTerminal, now }) {
   return sessions[nextIndex];
 }
 
-async function pushSessionFrames({ client, assetStore, config, logger, session, includeEnter, runningLoopOnly = false, forceDuplicateHold = false, runtimeState }) {
+export function shouldDeferRapidActiveStatePush({ runtimeState, target, isSessionSwitch, shouldAnimate, now, config }) {
+  if (!shouldAnimate || isSessionSwitch) {
+    return false;
+  }
+
+  if (!config.stateChangeSettleMs || config.stateChangeSettleMs <= 0) {
+    return false;
+  }
+
+  if (!runtimeState.currentSessionId || runtimeState.currentSessionId !== target.sessionId) {
+    return false;
+  }
+
+  if (!ACTIVE_STATES.has(target.state) || !ACTIVE_STATES.has(runtimeState.lastSessionState)) {
+    return false;
+  }
+
+  if (target.state === RUN_STATES.WAITING_INPUT || runtimeState.lastSessionState === RUN_STATES.WAITING_INPUT) {
+    return false;
+  }
+
+  return now - runtimeState.lastPushAt < config.stateChangeSettleMs;
+}
+
+export function shouldDeferStartingDisplay({ target, shouldAnimate, now, config }) {
+  if (!shouldAnimate || target?.state !== RUN_STATES.STARTING) {
+    return false;
+  }
+
+  if (!config.startingDisplayDelayMs || config.startingDisplayDelayMs <= 0) {
+    return false;
+  }
+
+  const stateStartedAt = target.lastStateChangeAt || target.updatedAt || 0;
+  return now - stateStartedAt < config.startingDisplayDelayMs;
+}
+
+function summarizePushReason({ isSessionSwitch, shouldAnimate, shouldReassert, shouldCycleRunningFrame }) {
+  if (shouldReassert) {
+    return 'takeover_reassert';
+  }
+  if (shouldCycleRunningFrame) {
+    return 'running_cycle';
+  }
+  if (isSessionSwitch && shouldAnimate) {
+    return 'session_switch_with_state_change';
+  }
+  if (isSessionSwitch) {
+    return 'session_switch';
+  }
+  if (shouldAnimate) {
+    return 'state_change';
+  }
+  return 'steady_state';
+}
+
+async function pushSessionFrames({ client, assetStore, config, logger, session, includeEnter, runningLoopOnly = false, forceDuplicateHold = false, reason = 'unspecified', runtimeState }) {
   const frames = runningLoopOnly
     ? getRunningLoopFrames({ assetStore, session, runtimeState })
     : assetStore.getStateSequence(session.state, {
@@ -257,6 +372,12 @@ async function pushSessionFrames({ client, assetStore, config, logger, session, 
     const fingerprint = crypto.createHash('sha1').update(imageBase64).digest('hex');
     const forcePush = forceDuplicateHold && index === frames.length - 1;
     if (!forcePush && fingerprint === runtimeState.lastFingerprint) {
+      logger.debug({
+        sessionId: session.sessionId,
+        state: session.state,
+        frame: frames[index],
+        reason
+      }, 'Skipping duplicate rotator frame push');
       continue;
     }
 
@@ -274,6 +395,9 @@ async function pushSessionFrames({ client, assetStore, config, logger, session, 
     logger.info({
       sessionId: session.sessionId,
       state: session.state,
+      reason,
+      frameIndex: index + 1,
+      frameCount: frames.length,
       frame: frames[index]
     }, 'Rotator pushed frame to Quote/0');
   }
@@ -311,6 +435,9 @@ async function refreshOwnedRender({ client, runtimeState, logger }) {
   try {
     const status = await client.getStatus();
     runtimeState.lastOwnedImageUrl = status?.renderInfo?.current?.image?.[0] || null;
+    logger.debug?.({
+      lastOwnedImageUrl: runtimeState.lastOwnedImageUrl
+    }, 'Refreshed last owned Dot render info');
   } catch (error) {
     logger.debug?.({ err: error }, 'Unable to refresh owned Dot render info after push');
   }
@@ -324,7 +451,20 @@ async function shouldReclaimTakeover({ client, runtimeState, logger }) {
   try {
     const status = await client.getStatus();
     const currentImageUrl = status?.renderInfo?.current?.image?.[0] || null;
-    return Boolean(currentImageUrl && currentImageUrl !== runtimeState.lastOwnedImageUrl);
+    const shouldReclaim = Boolean(currentImageUrl && currentImageUrl !== runtimeState.lastOwnedImageUrl);
+    if (shouldReclaim) {
+      logger.info({
+        currentImageUrl,
+        lastOwnedImageUrl: runtimeState.lastOwnedImageUrl
+      }, 'Dot render no longer matches last owned image; reclaiming takeover');
+    } else {
+      logger.debug?.({
+        currentImageUrl,
+        lastOwnedImageUrl: runtimeState.lastOwnedImageUrl
+      }, 'Dot render still matches current takeover image');
+    }
+
+    return shouldReclaim;
   } catch (error) {
     logger.debug?.({ err: error }, 'Unable to verify Dot current image; skipping smart takeover reclaim');
     return false;

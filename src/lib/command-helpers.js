@@ -8,7 +8,10 @@ import { resolveImageTaskKey } from './device-service.js';
 
 export async function bootstrapRuntime({ cliOptions = {}, needsDevice = true, needsTaskKey = false } = {}) {
   const config = loadConfig({ overrides: cliOptions });
-  const logger = createLogger(config.logLevel);
+  const logger = createLogger({
+    level: config.logLevel,
+    logFilePath: config.logFilePath
+  });
 
   if (needsDevice) {
     assertConfigFields(config, ['apiKey', 'deviceId']);

@@ -239,6 +239,28 @@ export function hasActiveSessions(sessions, { now = Date.now(), activeSessionSta
   );
 }
 
+export function selectFocusedActiveSession(sessions, {
+  now = Date.now(),
+  activeSessionFocusMs = 0
+} = {}) {
+  if (!activeSessionFocusMs || activeSessionFocusMs <= 0) {
+    return null;
+  }
+
+  return sessions
+    .filter((session) => ACTIVE_STATES.has(session?.state))
+    .filter((session) => now - (session.lastStateChangeAt || session.updatedAt || 0) <= activeSessionFocusMs)
+    .sort((left, right) => {
+      if (left.state === RUN_STATES.WAITING_INPUT && right.state !== RUN_STATES.WAITING_INPUT) {
+        return -1;
+      }
+      if (right.state === RUN_STATES.WAITING_INPUT && left.state !== RUN_STATES.WAITING_INPUT) {
+        return 1;
+      }
+      return (right.lastStateChangeAt || right.updatedAt || 0) - (left.lastStateChangeAt || left.updatedAt || 0);
+    })[0] || null;
+}
+
 export function selectLatestTerminalSession(sessions) {
   return sessions
     .filter((session) => TERMINAL_STATES.has(session.state))
