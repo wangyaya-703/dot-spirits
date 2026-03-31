@@ -71,6 +71,12 @@ export async function daemonCommand(cliOptions) {
 
   while (true) {
     try {
+      if (shouldYieldDaemonOwnership(registry)) {
+        logger.info('Another rotator pid owns the runtime; exiting stale daemon');
+        cleanup();
+        return;
+      }
+
       const now = Date.now();
       const terminalRetentionMs = Math.max(config.resultHoldMs, config.terminalPromotionMs);
       const snapshotSessions = registry.listSessions();
@@ -589,4 +595,9 @@ function selectSummaryPrimarySession({ activeSessions, focusedActive }) {
   }
 
   return activeSessions[0] || null;
+}
+
+function shouldYieldDaemonOwnership(registry) {
+  const pidInfo = registry.readPid();
+  return Boolean(pidInfo?.pid && pidInfo.pid !== process.pid);
 }
