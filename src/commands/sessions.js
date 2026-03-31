@@ -24,7 +24,8 @@ export async function sessionsCommand(cliOptions) {
   pruneExpiredSessions(registry, registry.listSessions(), {
     now,
     activeSessionStaleMs: config.activeSessionStaleMs,
-    terminalRetentionMs
+    terminalRetentionMs,
+    hookSessionTtlMs: config.hookSessionTtlMs
   });
 
   const allSessions = registry.listSessions()
@@ -33,12 +34,14 @@ export async function sessionsCommand(cliOptions) {
     now,
     rotateMaxSessions: config.rotateMaxSessions,
     activeSessionStaleMs: config.activeSessionStaleMs,
-    terminalSessionTtlMs: terminalRetentionMs
+    terminalSessionTtlMs: terminalRetentionMs,
+    hookSessionTtlMs: config.hookSessionTtlMs
   });
   const activeSessions = selectActiveRenderableSessions(allSessions, {
     now,
     rotateMaxSessions: config.rotateMaxSessions,
-    activeSessionStaleMs: config.activeSessionStaleMs
+    activeSessionStaleMs: config.activeSessionStaleMs,
+    hookSessionTtlMs: config.hookSessionTtlMs
   });
   const latestTerminal = selectLatestTerminalSession(renderableSessions);
   const status = registry.readStatus();
@@ -58,13 +61,15 @@ export async function sessionsCommand(cliOptions) {
       activeSessions: activeSessions.length,
       hasActiveSessions: hasActiveSessions(renderableSessions, {
         now,
-        activeSessionStaleMs: config.activeSessionStaleMs
+        activeSessionStaleMs: config.activeSessionStaleMs,
+        hookSessionTtlMs: config.hookSessionTtlMs
       }),
       latestTerminalSessionId: latestTerminal?.sessionId || null,
       promotedTerminalSessionId: promotedTerminal?.sessionId || null
     },
     sessions: renderableSessions.map((session) => ({
       sessionId: session.sessionId,
+      agentType: session.agentType || 'codex',
       codexThreadId: session.codexThreadId || null,
       sessionName: session.sessionName || null,
       displayName: getSessionDisplayName(session),
@@ -98,6 +103,7 @@ function printTable(payload) {
   const rows = payload.sessions.map((session) => ({
     NAME: session.displayName || '-',
     ID: session.sessionId,
+    AGENT: session.agentType || '-',
     STATE: session.state,
     THREAD: session.codexThreadId ? session.codexThreadId.slice(0, 8) : '-',
     UPDATED: formatAge(session.updatedAt),

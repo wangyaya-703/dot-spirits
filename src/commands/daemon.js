@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { bootstrapRuntime } from '../lib/command-helpers.js';
-import { composeFrameWithOverlay } from '../lib/frame-overlay.js';
+import { composeDashboardFrame, composeFrameWithOverlay } from '../lib/frame-overlay.js';
 import {
   SessionRegistry,
   defaultSessionLabel,
@@ -28,6 +28,7 @@ export async function daemonCommand(cliOptions) {
     currentSessionId: null,
     currentSlotEndsAt: 0,
     displayedSignatureBySession: new Map(),
+    lastSummarySignature: null,
     lastPushAt: 0,
     lastFingerprint: null,
     lastOwnedImageUrl: null,
@@ -158,21 +159,50 @@ export async function daemonCommand(cliOptions) {
         continue;
       }
 
+      const shouldReassertActiveTakeover = state.currentSessionId
+        ? await shouldReclaimTakeover({ client, runtimeState: state, logger })
+        : false;
+
+      if (activeSessions.length > 1) {
+        const summarySignature = buildSummarySignature(activeSessions);
+        const shouldPushSummary = (
+          state.currentSessionId !== SUMMARY_SESSION_ID ||
+          state.lastSummarySignature !== summarySignature ||
+          shouldReassertActiveTakeover
+        );
+
+        if (shouldPushSummary) {
+          await pushSummaryFrame({
+            client,
+            config,
+            logger,
+            sessions: activeSessions,
+            reason: shouldReassertActiveTakeover ? 'summary_reclaim' : 'summary_update',
+            runtimeState: state
+          });
+          state.currentSessionId = SUMMARY_SESSION_ID;
+          state.currentSlotEndsAt = 0;
+          state.lastSessionState = null;
+          state.lastSummarySignature = summarySignature;
+        }
+
+        publishStatus({ registry, state, sessions, activeSessions, promotedTerminal: null, mode: 'takeover' });
+        await sleep(config.rotatorPollMs);
+        continue;
+      }
+
       const target = selectNextSession({ state, sessions: activeSessions, focusedActive, now });
       const signature = `${target.sessionId}:${target.state}:${target.sequenceVersion}`;
       const hasSeenSignature = state.displayedSignatureBySession.get(target.sessionId) === signature;
       const shouldAnimate = !hasSeenSignature;
       const isSessionSwitch = state.currentSessionId !== target.sessionId;
       const dueForReassert = (
-        config.takeoverReassertMs > 0 &&
         !isSessionSwitch &&
         !shouldAnimate &&
         state.currentSessionId === target.sessionId &&
-        now - state.lastPushAt >= config.takeoverReassertMs
+        shouldReassertActiveTakeover
       );
-      const shouldReassert = dueForReassert
-        ? await shouldReclaimTakeover({ client, runtimeState: state, logger })
-        : false;
+      const shouldReassert = dueForReassert;
       const shouldCycleRunningFrame = (
         target.state === RUN_STATES.RUNNING &&
         !isSessionSwitch &&
@@ -256,7 +286,10 @@ function resetTakeoverState(state) {
   state.currentSessionId = null;
   state.currentSlotEndsAt = 0;
   state.lastOwnedImageUrl = null;
+  state.lastSummarySignature = null;
 }
+
+const SUMMARY_SESSION_ID = '__SUMMARY__';
 
 export function selectNextSession({ state, sessions, focusedActive = null, now }) {
   if (sessions.length === 1) {
@@ -419,6 +452,43 @@ async function pushSessionFrames({ client, assetStore, config, logger, session, 
   await refreshOwnedRender({ client, runtimeState, logger });
 }
 
+async function pushSummaryFrame({ client, config, logger, sessions, reason = 'summary_update', runtimeState }) {
+  const rendered = composeDashboardFrame({ sessions });
+  const delta = Date.now() - runtimeState.lastPushAt;
+  if (delta < config.minRefreshIntervalMs) {
+    await sleep(config.minRefreshIntervalMs - delta);
+  }
+
+  const imageBase64 = rendered.toString('base64');
+  const fingerprint = crypto.createHash('sha1').update(imageBase64).digest('hex');
+  if (fingerprint === runtimeState.lastFingerprint) {
+    logger.debug({ reason }, 'Skipping duplicate summary frame push');
+    return;
+  }
+
+  await client.pushImage({
+    imageBase64,
+    refreshNow: true,
+    border: config.border,
+    ditherType: config.ditherType,
+    ditherKernel: config.ditherKernel,
+    taskKey: config.taskKey
+  });
+
+  runtimeState.lastPushAt = Date.now();
+  runtimeState.lastFingerprint = fingerprint;
+  logger.info({
+    reason,
+    sessions: sessions.map((session) => ({
+      sessionId: session.sessionId,
+      agentType: session.agentType,
+      state: session.state
+    }))
+  }, 'Rotator pushed summary frame to Quote/0');
+
+  await refreshOwnedRender({ client, runtimeState, logger });
+}
+
 function getRunningLoopFrames({ assetStore, session, runtimeState }) {
   const frames = assetStore.getAmbientStateFrames(session.state, { variantCount: 1 });
   if (frames.length <= 1) {
@@ -483,4 +553,17 @@ async function shouldReclaimTakeover({ client, runtimeState, logger }) {
     logger.debug?.({ err: error }, 'Unable to verify Dot current image; skipping smart takeover reclaim');
     return false;
   }
+}
+
+function buildSummarySignature(sessions) {
+  return sessions
+    .map((session) => [
+      session.sessionId,
+      session.agentType || '',
+      session.state,
+      session.sequenceVersion || 0,
+      session.sessionName || ''
+    ].join(':'))
+    .sort()
+    .join('|');
 }
