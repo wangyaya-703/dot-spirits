@@ -84,6 +84,10 @@ test('getSessionDisplayName prefers session name over raw id', () => {
     'DEMO-PROJECT'
   );
   assert.equal(
+    getSessionDisplayName({ sessionId: '99E1', sessionName: '工作台' }),
+    'GZT'
+  );
+  assert.equal(
     getSessionDisplayName({ sessionId: '99E1', sessionName: null }),
     '99E1'
   );

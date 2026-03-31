@@ -10,6 +10,17 @@ test('normalizeDisplayText normalizes names consistently across overlays and ses
   );
 });
 
+test('normalizeDisplayText transliterates Chinese names into stable ASCII initials', () => {
+  assert.equal(
+    normalizeDisplayText('工作台', { maxLength: 4 }),
+    'GZT'
+  );
+  assert.equal(
+    normalizeDisplayText('字节跳动-app', { maxLength: 6 }),
+    'ZJTD-A'
+  );
+});
+
 test('compact and default state labels come from the same source mapping', () => {
   assert.equal(defaultSessionLabel('starting'), 'START');
   assert.equal(getStateDisplayLabel('starting', null, { compact: true }), 'STRT');
