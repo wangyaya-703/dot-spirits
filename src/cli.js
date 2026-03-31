@@ -78,6 +78,7 @@ program
   .command('push [state]')
   .description('Push a state hold frame or a custom PNG file')
   .option('--file <path>', 'Explicit PNG file to push')
+  .option('--agent <type>', 'Agent type for overlay labeling, for example codex or claude-code')
   .option('--no-refresh-now', 'Update the task without forcing an immediate screen switch')
   .action(async (state, command) => handleAction(() => pushCommand(state, getCombinedOptions(command))));
 

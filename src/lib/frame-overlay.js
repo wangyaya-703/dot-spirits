@@ -2,9 +2,8 @@ import { PNG } from 'pngjs';
 import { createWhitePng, drawBitmapText, drawRect, measureBitmapText } from './bitmap-font.js';
 import { AGENT_TYPES } from './constants.js';
 
-const FOOTER_HEIGHT = 24;
-const PADDING_X = 10;
-const PADDING_Y = 6;
+const FOOTER_HEIGHT = 18;
+const FOOTER_GAP = 6;
 const SCALE = 2;
 const DASHBOARD_TILE_SCALE = 1;
 const DASHBOARD_COLUMN_WIDTH = 80;
@@ -32,8 +31,8 @@ export function getStateDisplayLabel(state, fallback) {
   return STATE_LABELS[state] || String(state || '').replaceAll('_', ' ').toUpperCase();
 }
 
-export function composeFrameWithOverlay(imageBuffer, { state, stateLabel, sessionId, sessionName } = {}) {
-  const sessionText = buildSessionBadge({ sessionId, sessionName });
+export function composeFrameWithOverlay(imageBuffer, { state, stateLabel, sessionId, sessionName, agentType } = {}) {
+  const sessionText = buildSingleSessionTag({ sessionId, sessionName, agentType });
   if (!sessionText && !stateLabel && !state) {
     return imageBuffer;
   }
@@ -42,18 +41,26 @@ export function composeFrameWithOverlay(imageBuffer, { state, stateLabel, sessio
   const labelText = compactStateLabel(state, stateLabel);
 
   const footerY = png.height - FOOTER_HEIGHT - 8;
-  drawRect(png, 8, footerY, png.width - 16, FOOTER_HEIGHT, 255);
-  drawRect(png, 8, footerY, png.width - 16, 1, 0);
-  drawRect(png, 8, footerY + FOOTER_HEIGHT - 1, png.width - 16, 1, 0);
-  drawRect(png, 8, footerY, 1, FOOTER_HEIGHT, 0);
-  drawRect(png, png.width - 9, footerY, 1, FOOTER_HEIGHT, 0);
-
-  drawBitmapText(png, labelText, 8 + PADDING_X, footerY + PADDING_Y, SCALE);
-
+  const stateWidth = Math.max(40, measureBitmapText(labelText, DASHBOARD_TILE_SCALE) + 12);
+  drawLabeledBox(png, {
+    x: 8,
+    y: footerY,
+    width: stateWidth,
+    height: FOOTER_HEIGHT,
+    text: labelText
+  });
   if (sessionText) {
-    const sessionWidth = measureBitmapText(sessionText, SCALE);
-    const sessionX = png.width - 8 - PADDING_X - sessionWidth;
-    drawBitmapText(png, sessionText, sessionX, footerY + PADDING_Y, SCALE);
+    const sessionWidth = Math.min(
+      png.width - 24 - stateWidth - FOOTER_GAP,
+      Math.max(84, measureBitmapText(sessionText, DASHBOARD_TILE_SCALE) + 12)
+    );
+    drawLabeledBox(png, {
+      x: png.width - 8 - sessionWidth,
+      y: footerY,
+      width: sessionWidth,
+      height: FOOTER_HEIGHT,
+      text: sessionText
+    });
   }
 
   return PNG.sync.write(png);
@@ -154,22 +161,6 @@ function groupDashboardSessions(sessions) {
   return grouped;
 }
 
-function buildSessionBadge({ sessionId, sessionName }) {
-  const normalizedName = String(sessionName || '')
-    .trim()
-    .replace(/[^a-zA-Z0-9:_-]+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
-    .toUpperCase();
-  const normalizedId = String(sessionId || '').trim().toUpperCase();
-
-  if (normalizedName) {
-    return normalizedName.slice(0, 12);
-  }
-
-  return normalizedId ? `ID:${normalizedId}` : '';
-}
-
 function normalizeDashboardText(value, maxLength) {
   return String(value || '')
     .trim()
@@ -202,4 +193,13 @@ function compactStateLabel(state, fallback) {
     default:
       return normalizeDashboardText(label, 4);
   }
+}
+
+function buildSingleSessionTag({ sessionId, sessionName, agentType }) {
+  if (!sessionId && !sessionName && !agentType) {
+    return '';
+  }
+  const agent = agentType === AGENT_TYPES.CLAUDE_CODE ? 'CLAUDE' : 'CODEX';
+  const name = normalizeDashboardText(sessionName || sessionId, 8);
+  return name ? `${agent} ${name}` : agent;
 }

@@ -23,7 +23,8 @@ export async function pushCommand(state, cliOptions) {
     state,
     stateLabel: cliOptions.stateLabel || getStateDisplayLabel(state),
     sessionId: cliOptions.sessionId,
-    sessionName: cliOptions.sessionName
+    sessionName: cliOptions.sessionName,
+    agentType: cliOptions.agent
   });
   const imageBase64 = composed.toString('base64');
   await client.pushImage({

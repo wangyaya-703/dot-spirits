@@ -414,7 +414,8 @@ async function pushSessionFrames({ client, assetStore, config, logger, session, 
       state: session.state,
       stateLabel: session.stateLabel || defaultSessionLabel(session.state),
       sessionId: session.sessionId,
-      sessionName: session.sessionName
+      sessionName: session.sessionName,
+      agentType: session.agentType
     });
 
     const minIntervalMs = index === 0 ? config.minRefreshIntervalMs : config.frameIntervalMs;
