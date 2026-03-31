@@ -12,10 +12,7 @@ import {
   selectRenderableSessions
 } from '../lib/session-registry.js';
 import { ACTIVE_STATES, RUN_STATES } from '../lib/constants.js';
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+import { sleep } from '../lib/utils.js';
 
 export async function daemonCommand(cliOptions) {
   const { config, client, assetStore, logger } = await bootstrapRuntime({
@@ -40,8 +37,17 @@ export async function daemonCommand(cliOptions) {
   };
 
   const cleanup = () => {
-    registry.clearPid();
-    registry.clearStatus();
+    try {
+      registry.clearPid();
+    } catch (error) {
+      logger.warn({ err: error }, 'Failed to clear rotator pid file during cleanup');
+    }
+
+    try {
+      registry.clearStatus();
+    } catch (error) {
+      logger.warn({ err: error }, 'Failed to clear rotator status file during cleanup');
+    }
   };
   process.once('SIGINT', cleanup);
   process.once('SIGTERM', cleanup);
@@ -63,178 +69,186 @@ export async function daemonCommand(cliOptions) {
   }, 'Dot Codex rotator started');
 
   while (true) {
-    const now = Date.now();
-    const terminalRetentionMs = Math.max(config.resultHoldMs, config.terminalPromotionMs);
-    const snapshotSessions = registry.listSessions();
-    pruneExpiredSessions(registry, snapshotSessions, {
-      now,
-      activeSessionStaleMs: config.activeSessionStaleMs,
-      terminalRetentionMs
-    });
-
-    const sessions = selectRenderableSessions(registry.listSessions(), {
-      now,
-      rotateMaxSessions: config.rotateMaxSessions,
-      activeSessionStaleMs: config.activeSessionStaleMs,
-      terminalSessionTtlMs: terminalRetentionMs
-    });
-
-    if (sessions.length === 0) {
-      if (state.currentSessionId || state.lastOwnedImageUrl) {
-        logger.info({
-          previousSessionId: state.currentSessionId,
-          lastOwnedImageUrl: state.lastOwnedImageUrl
-        }, 'No renderable sessions remain; releasing Dot takeover state');
-      }
-      resetTakeoverState(state);
-      await sleep(config.rotatorPollMs);
-      continue;
-    }
-
-    const active = hasActiveSessions(sessions, {
-      now,
-      activeSessionStaleMs: config.activeSessionStaleMs
-    });
-    const activeSessions = active
-      ? selectActiveRenderableSessions(sessions, {
-          now,
-          rotateMaxSessions: config.rotateMaxSessions,
-          activeSessionStaleMs: config.activeSessionStaleMs
-        })
-      : [];
-    const focusedActive = active
-      ? selectFocusedActiveSession(activeSessions, {
-          now,
-          activeSessionFocusMs: config.activeSessionFocusMs
-        })
-      : null;
-
-    if (!active) {
-      const latestTerminal = selectLatestTerminalSession(sessions);
-      if (
-        latestTerminal &&
-        now - (latestTerminal.updatedAt || 0) <= config.resultHoldMs
-      ) {
-        const signature = `${latestTerminal.sessionId}:${latestTerminal.state}:${latestTerminal.sequenceVersion}`;
-        const hasSeenSignature = state.displayedSignatureBySession.get(latestTerminal.sessionId) === signature;
-        if (!hasSeenSignature || state.currentSessionId !== latestTerminal.sessionId) {
-          await pushSessionFrames({
-            client,
-            assetStore,
-            config,
-            logger,
-            session: latestTerminal,
-            includeEnter: !hasSeenSignature,
-            reason: hasSeenSignature ? 'latest_terminal_reassert' : 'latest_terminal_result',
-            runtimeState: state
-          });
-          state.displayedSignatureBySession.set(latestTerminal.sessionId, signature);
-          state.currentSessionId = latestTerminal.sessionId;
-          state.lastSessionState = latestTerminal.state;
-        }
-      } else {
-        if (state.currentSessionId) {
-          logger.info({
-            previousSessionId: state.currentSessionId
-          }, 'Latest terminal result expired; releasing Dot takeover state');
-        }
-        resetTakeoverState(state);
-      }
-
-      publishStatus({ registry, state, sessions, activeSessions, mode: 'idle' });
-
-      await sleep(config.rotatorPollMs);
-      continue;
-    }
-
-    const target = selectNextSession({ state, sessions: activeSessions, focusedActive, now });
-    const signature = `${target.sessionId}:${target.state}:${target.sequenceVersion}`;
-    const hasSeenSignature = state.displayedSignatureBySession.get(target.sessionId) === signature;
-    const shouldAnimate = !hasSeenSignature;
-    const isSessionSwitch = state.currentSessionId !== target.sessionId;
-    const dueForReassert = (
-      config.takeoverReassertMs > 0 &&
-      !isSessionSwitch &&
-      !shouldAnimate &&
-      state.currentSessionId === target.sessionId &&
-      now - state.lastPushAt >= config.takeoverReassertMs
-    );
-    const shouldReassert = dueForReassert
-      ? await shouldReclaimTakeover({ client, runtimeState: state, logger })
-      : false;
-    const shouldCycleRunningFrame = (
-      target.state === RUN_STATES.RUNNING &&
-      !isSessionSwitch &&
-      !shouldAnimate &&
-      !shouldReassert &&
-      config.runningFrameCycleMs > 0 &&
-      now - state.lastPushAt >= config.runningFrameCycleMs
-    );
-    const shouldDeferActiveStatePush = shouldDeferRapidActiveStatePush({
-      runtimeState: state,
-      target,
-      isSessionSwitch,
-      shouldAnimate,
-      now,
-      config
-    });
-    const shouldDeferStartingPush = shouldDeferStartingDisplay({
-      target,
-      shouldAnimate,
-      now,
-      config
-    });
-
-    if (shouldDeferStartingPush) {
-      logger.info({
-        sessionId: target.sessionId,
-        state: target.state,
-        lastStateChangeAt: target.lastStateChangeAt || target.updatedAt,
-        startingDisplayDelayMs: config.startingDisplayDelayMs
-      }, 'Deferring starting artwork while the session is still warming up');
-      publishStatus({ registry, state, sessions, activeSessions, promotedTerminal: null, mode: 'takeover' });
-      await sleep(config.rotatorPollMs);
-      continue;
-    }
-
-    if (shouldDeferActiveStatePush) {
-      logger.info({
-        sessionId: target.sessionId,
-        previousState: state.lastSessionState,
-        nextState: target.state,
-        lastPushAt: state.lastPushAt,
-        stateChangeSettleMs: config.stateChangeSettleMs
-      }, 'Deferring rapid active-state repaint');
-      publishStatus({ registry, state, sessions, activeSessions, promotedTerminal: null, mode: 'takeover' });
-      await sleep(config.rotatorPollMs);
-      continue;
-    }
-
-    if (isSessionSwitch || shouldAnimate || shouldReassert || shouldCycleRunningFrame) {
-      await pushSessionFrames({
-        client,
-        assetStore,
-        config,
-        logger,
-        session: target,
-        includeEnter: shouldAnimate,
-        runningLoopOnly: shouldCycleRunningFrame,
-        forceDuplicateHold: shouldReassert,
-        reason: summarizePushReason({ isSessionSwitch, shouldAnimate, shouldReassert, shouldCycleRunningFrame }),
-        runtimeState: state
+    try {
+      const now = Date.now();
+      const terminalRetentionMs = Math.max(config.resultHoldMs, config.terminalPromotionMs);
+      const snapshotSessions = registry.listSessions();
+      pruneExpiredSessions(registry, snapshotSessions, {
+        now,
+        activeSessionStaleMs: config.activeSessionStaleMs,
+        terminalRetentionMs,
+        hookSessionTtlMs: config.hookSessionTtlMs
       });
 
-      state.displayedSignatureBySession.set(target.sessionId, signature);
-      state.currentSessionId = target.sessionId;
-      state.lastSessionState = target.state;
-      if (isSessionSwitch || shouldAnimate) {
-        state.currentSlotEndsAt = Date.now() + config.rotateIntervalMs;
+      const sessions = selectRenderableSessions(registry.listSessions(), {
+        now,
+        rotateMaxSessions: config.rotateMaxSessions,
+        activeSessionStaleMs: config.activeSessionStaleMs,
+        terminalSessionTtlMs: terminalRetentionMs,
+        hookSessionTtlMs: config.hookSessionTtlMs
+      });
+
+      if (sessions.length === 0) {
+        if (state.currentSessionId || state.lastOwnedImageUrl) {
+          logger.info({
+            previousSessionId: state.currentSessionId,
+            lastOwnedImageUrl: state.lastOwnedImageUrl
+          }, 'No renderable sessions remain; releasing Dot takeover state');
+        }
+        resetTakeoverState(state);
+        await sleep(config.rotatorPollMs);
+        continue;
       }
+
+      const active = hasActiveSessions(sessions, {
+        now,
+        activeSessionStaleMs: config.activeSessionStaleMs,
+        hookSessionTtlMs: config.hookSessionTtlMs
+      });
+      const activeSessions = active
+        ? selectActiveRenderableSessions(sessions, {
+            now,
+            rotateMaxSessions: config.rotateMaxSessions,
+            activeSessionStaleMs: config.activeSessionStaleMs,
+            hookSessionTtlMs: config.hookSessionTtlMs
+          })
+        : [];
+      const focusedActive = active
+        ? selectFocusedActiveSession(activeSessions, {
+            now,
+            activeSessionFocusMs: config.activeSessionFocusMs
+          })
+        : null;
+
+      if (!active) {
+        const latestTerminal = selectLatestTerminalSession(sessions);
+        if (
+          latestTerminal &&
+          now - (latestTerminal.updatedAt || 0) <= config.resultHoldMs
+        ) {
+          const signature = `${latestTerminal.sessionId}:${latestTerminal.state}:${latestTerminal.sequenceVersion}`;
+          const hasSeenSignature = state.displayedSignatureBySession.get(latestTerminal.sessionId) === signature;
+          if (!hasSeenSignature || state.currentSessionId !== latestTerminal.sessionId) {
+            await pushSessionFrames({
+              client,
+              assetStore,
+              config,
+              logger,
+              session: latestTerminal,
+              includeEnter: !hasSeenSignature,
+              reason: hasSeenSignature ? 'latest_terminal_reassert' : 'latest_terminal_result',
+              runtimeState: state
+            });
+            state.displayedSignatureBySession.set(latestTerminal.sessionId, signature);
+            state.currentSessionId = latestTerminal.sessionId;
+            state.lastSessionState = latestTerminal.state;
+          }
+        } else {
+          if (state.currentSessionId) {
+            logger.info({
+              previousSessionId: state.currentSessionId
+            }, 'Latest terminal result expired; releasing Dot takeover state');
+          }
+          resetTakeoverState(state);
+        }
+
+        publishStatus({ registry, state, sessions, activeSessions, mode: 'idle' });
+
+        await sleep(config.rotatorPollMs);
+        continue;
+      }
+
+      const target = selectNextSession({ state, sessions: activeSessions, focusedActive, now });
+      const signature = `${target.sessionId}:${target.state}:${target.sequenceVersion}`;
+      const hasSeenSignature = state.displayedSignatureBySession.get(target.sessionId) === signature;
+      const shouldAnimate = !hasSeenSignature;
+      const isSessionSwitch = state.currentSessionId !== target.sessionId;
+      const dueForReassert = (
+        config.takeoverReassertMs > 0 &&
+        !isSessionSwitch &&
+        !shouldAnimate &&
+        state.currentSessionId === target.sessionId &&
+        now - state.lastPushAt >= config.takeoverReassertMs
+      );
+      const shouldReassert = dueForReassert
+        ? await shouldReclaimTakeover({ client, runtimeState: state, logger })
+        : false;
+      const shouldCycleRunningFrame = (
+        target.state === RUN_STATES.RUNNING &&
+        !isSessionSwitch &&
+        !shouldAnimate &&
+        !shouldReassert &&
+        config.runningFrameCycleMs > 0 &&
+        now - state.lastPushAt >= config.runningFrameCycleMs
+      );
+      const shouldDeferActiveStatePush = shouldDeferRapidActiveStatePush({
+        runtimeState: state,
+        target,
+        isSessionSwitch,
+        shouldAnimate,
+        now,
+        config
+      });
+      const shouldDeferStartingPush = shouldDeferStartingDisplay({
+        target,
+        shouldAnimate,
+        now,
+        config
+      });
+
+      if (shouldDeferStartingPush) {
+        logger.info({
+          sessionId: target.sessionId,
+          state: target.state,
+          lastStateChangeAt: target.lastStateChangeAt || target.updatedAt,
+          startingDisplayDelayMs: config.startingDisplayDelayMs
+        }, 'Deferring starting artwork while the session is still warming up');
+        publishStatus({ registry, state, sessions, activeSessions, promotedTerminal: null, mode: 'takeover' });
+        await sleep(config.rotatorPollMs);
+        continue;
+      }
+
+      if (shouldDeferActiveStatePush) {
+        logger.info({
+          sessionId: target.sessionId,
+          previousState: state.lastSessionState,
+          nextState: target.state,
+          lastPushAt: state.lastPushAt,
+          stateChangeSettleMs: config.stateChangeSettleMs
+        }, 'Deferring rapid active-state repaint');
+        publishStatus({ registry, state, sessions, activeSessions, promotedTerminal: null, mode: 'takeover' });
+        await sleep(config.rotatorPollMs);
+        continue;
+      }
+
+      if (isSessionSwitch || shouldAnimate || shouldReassert || shouldCycleRunningFrame) {
+        await pushSessionFrames({
+          client,
+          assetStore,
+          config,
+          logger,
+          session: target,
+          includeEnter: shouldAnimate,
+          runningLoopOnly: shouldCycleRunningFrame,
+          forceDuplicateHold: shouldReassert,
+          reason: summarizePushReason({ isSessionSwitch, shouldAnimate, shouldReassert, shouldCycleRunningFrame }),
+          runtimeState: state
+        });
+
+        state.displayedSignatureBySession.set(target.sessionId, signature);
+        state.currentSessionId = target.sessionId;
+        state.lastSessionState = target.state;
+        if (isSessionSwitch || shouldAnimate) {
+          state.currentSlotEndsAt = Date.now() + config.rotateIntervalMs;
+        }
+      }
+
+      publishStatus({ registry, state, sessions, activeSessions, promotedTerminal: null, mode: 'takeover' });
+    } catch (error) {
+      logger.error({ err: error }, 'Dot Codex rotator loop failed; continuing after backoff');
+      await sleep(config.rotatorPollMs);
+      continue;
     }
-
-    publishStatus({ registry, state, sessions, activeSessions, promotedTerminal: null, mode: 'takeover' });
-
-    await sleep(config.rotatorPollMs);
   }
 }
 

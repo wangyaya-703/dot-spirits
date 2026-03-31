@@ -1,4 +1,5 @@
 import { URL } from 'node:url';
+import { sleep } from './utils.js';
 
 const DEFAULT_TIMEOUT_MS = 10000;
 const MAX_ATTEMPTS = 3;
@@ -149,10 +150,6 @@ export class Quote0Client {
 
 function backoffMs(attempt) {
   return 300 * 2 ** (attempt - 1);
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function abortError() {

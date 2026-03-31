@@ -2,6 +2,14 @@
   "name": "dot-codex",
   "version": "0.1.0",
   "description": "Quote/0 Codex status bridge for Dot.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wangyaya-703/dot-codex.git"
+  },
+  "homepage": "https://github.com/wangyaya-703/dot-codex#readme",
+  "bugs": {
+    "url": "https://github.com/wangyaya-703/dot-codex/issues"
+  },
   "main": "src/cli.js",
   "scripts": {
     "test": "node --test",
@@ -11,7 +19,7 @@
     "generate:gemini-assets": "python3 scripts/generate-gemini-siamese-theme.py"
   },
   "keywords": [],
-  "author": "",
+  "author": "wangyaya-703",
   "license": "MIT",
   "type": "module",
   "bin": {

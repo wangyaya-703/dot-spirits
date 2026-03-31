@@ -52,6 +52,97 @@ test('selectNextSession jumps to a freshly changed active session before the slo
   assert.equal(target.sessionId, 'B');
 });
 
+test('selectNextSession preempts to waiting_input before other active sessions', () => {
+  const state = {
+    currentSessionId: 'A',
+    currentSlotEndsAt: 20_000,
+    displayedSignatureBySession: new Map([['A', 'A:running:1']]),
+    sessionOrderCursor: 0
+  };
+  const sessions = [
+    { sessionId: 'A', state: RUN_STATES.RUNNING, sequenceVersion: 1, updatedAt: 1_000 },
+    { sessionId: 'B', state: RUN_STATES.WAITING_INPUT, sequenceVersion: 1, updatedAt: 2_000 },
+    { sessionId: 'C', state: RUN_STATES.RUNNING, sequenceVersion: 1, updatedAt: 3_000 }
+  ];
+
+  const target = selectNextSession({
+    state,
+    sessions,
+    focusedActive: sessions[2],
+    now: 10_000
+  });
+
+  assert.equal(target.sessionId, 'B');
+});
+
+test('selectNextSession keeps current session when its signature changed', () => {
+  const state = {
+    currentSessionId: 'A',
+    currentSlotEndsAt: 20_000,
+    displayedSignatureBySession: new Map([['A', 'A:running:1']]),
+    sessionOrderCursor: 0
+  };
+  const sessions = [
+    { sessionId: 'A', state: RUN_STATES.RUNNING, sequenceVersion: 2, updatedAt: 2_000 },
+    { sessionId: 'B', state: RUN_STATES.RUNNING, sequenceVersion: 1, updatedAt: 3_000 }
+  ];
+
+  const target = selectNextSession({
+    state,
+    sessions,
+    focusedActive: null,
+    now: 10_000
+  });
+
+  assert.equal(target.sessionId, 'A');
+});
+
+test('selectNextSession rotates when the current slot expires', () => {
+  const state = {
+    currentSessionId: 'A',
+    currentSlotEndsAt: 5_000,
+    displayedSignatureBySession: new Map([['A', 'A:running:1']]),
+    sessionOrderCursor: 0
+  };
+  const sessions = [
+    { sessionId: 'A', state: RUN_STATES.RUNNING, sequenceVersion: 1, updatedAt: 1_000 },
+    { sessionId: 'B', state: RUN_STATES.RUNNING, sequenceVersion: 1, updatedAt: 2_000 },
+    { sessionId: 'C', state: RUN_STATES.RUNNING, sequenceVersion: 1, updatedAt: 3_000 }
+  ];
+
+  const target = selectNextSession({
+    state,
+    sessions,
+    focusedActive: null,
+    now: 10_000
+  });
+
+  assert.equal(target.sessionId, 'B');
+});
+
+test('selectNextSession wraps around during round-robin rotation', () => {
+  const state = {
+    currentSessionId: 'C',
+    currentSlotEndsAt: 5_000,
+    displayedSignatureBySession: new Map([['C', 'C:running:1']]),
+    sessionOrderCursor: 2
+  };
+  const sessions = [
+    { sessionId: 'A', state: RUN_STATES.RUNNING, sequenceVersion: 1, updatedAt: 1_000 },
+    { sessionId: 'B', state: RUN_STATES.RUNNING, sequenceVersion: 1, updatedAt: 2_000 },
+    { sessionId: 'C', state: RUN_STATES.RUNNING, sequenceVersion: 1, updatedAt: 3_000 }
+  ];
+
+  const target = selectNextSession({
+    state,
+    sessions,
+    focusedActive: null,
+    now: 10_000
+  });
+
+  assert.equal(target.sessionId, 'A');
+});
+
 test('shouldDeferRapidActiveStatePush coalesces rapid active-state churn on the same session', () => {
   const deferred = shouldDeferRapidActiveStatePush({
     runtimeState: {
@@ -96,6 +187,50 @@ test('shouldDeferRapidActiveStatePush never delays waiting_input', () => {
   assert.equal(deferred, false);
 });
 
+test('shouldDeferRapidActiveStatePush does not defer after a session switch', () => {
+  const deferred = shouldDeferRapidActiveStatePush({
+    runtimeState: {
+      currentSessionId: 'A',
+      lastSessionState: RUN_STATES.STARTING,
+      lastPushAt: 7_000
+    },
+    target: {
+      sessionId: 'B',
+      state: RUN_STATES.RUNNING
+    },
+    isSessionSwitch: true,
+    shouldAnimate: true,
+    now: 10_000,
+    config: {
+      stateChangeSettleMs: 5_000
+    }
+  });
+
+  assert.equal(deferred, false);
+});
+
+test('shouldDeferRapidActiveStatePush does not defer after settle window expires', () => {
+  const deferred = shouldDeferRapidActiveStatePush({
+    runtimeState: {
+      currentSessionId: 'A',
+      lastSessionState: RUN_STATES.STARTING,
+      lastPushAt: 1_000
+    },
+    target: {
+      sessionId: 'A',
+      state: RUN_STATES.RUNNING
+    },
+    isSessionSwitch: false,
+    shouldAnimate: true,
+    now: 10_000,
+    config: {
+      stateChangeSettleMs: 5_000
+    }
+  });
+
+  assert.equal(deferred, false);
+});
+
 test('shouldDeferStartingDisplay hides starting artwork during the warm-up window', () => {
   const deferred = shouldDeferStartingDisplay({
     target: {
@@ -124,6 +259,40 @@ test('shouldDeferStartingDisplay stops deferring once the warm-up window is over
     now: 10_000,
     config: {
       startingDisplayDelayMs: 4_000
+    }
+  });
+
+  assert.equal(deferred, false);
+});
+
+test('shouldDeferStartingDisplay bypasses non-starting states', () => {
+  const deferred = shouldDeferStartingDisplay({
+    target: {
+      sessionId: 'A',
+      state: RUN_STATES.RUNNING,
+      lastStateChangeAt: 8_000
+    },
+    shouldAnimate: true,
+    now: 10_000,
+    config: {
+      startingDisplayDelayMs: 4_000
+    }
+  });
+
+  assert.equal(deferred, false);
+});
+
+test('shouldDeferStartingDisplay disables itself when delay is zero', () => {
+  const deferred = shouldDeferStartingDisplay({
+    target: {
+      sessionId: 'A',
+      state: RUN_STATES.STARTING,
+      lastStateChangeAt: 9_500
+    },
+    shouldAnimate: true,
+    now: 10_000,
+    config: {
+      startingDisplayDelayMs: 0
     }
   });
 

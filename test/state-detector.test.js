@@ -58,3 +58,40 @@ test('CodexStateDetector does not emit completed on clean exit from idle', () =>
   const transition = detector.markExit(0, null);
   assert.equal(transition, null);
 });
+
+test('CodexStateDetector turns quiet starting into idle', async () => {
+  const detector = new CodexStateDetector([], { runningIdleMs: 5, completedToIdleMs: 5 });
+  detector.markStarted();
+
+  await new Promise((resolve) => setTimeout(resolve, 8));
+  const transition = detector.poll();
+
+  assert.equal(transition.nextState, RUN_STATES.IDLE);
+});
+
+test('CodexStateDetector transitions to completed on clean exit from active states', () => {
+  const detector = new CodexStateDetector([], { runningIdleMs: 5, completedToIdleMs: 5 });
+  detector.transition(RUN_STATES.WAITING_INPUT, 'test setup');
+
+  const transition = detector.markExit(0, null);
+
+  assert.equal(transition.nextState, RUN_STATES.COMPLETED);
+});
+
+test('CodexStateDetector transitions to failed on non-zero exit', () => {
+  const detector = new CodexStateDetector([], { runningIdleMs: 5, completedToIdleMs: 5 });
+  detector.transition(RUN_STATES.RUNNING, 'test setup');
+
+  const transition = detector.markExit(1, null);
+
+  assert.equal(transition.nextState, RUN_STATES.FAILED);
+});
+
+test('CodexStateDetector transitions to cancelled on signal exit', () => {
+  const detector = new CodexStateDetector([], { runningIdleMs: 5, completedToIdleMs: 5 });
+  detector.transition(RUN_STATES.RUNNING, 'test setup');
+
+  const transition = detector.markExit(null, 'SIGTERM');
+
+  assert.equal(transition.nextState, RUN_STATES.CANCELLED);
+});

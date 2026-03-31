@@ -1,8 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import {
+  SessionRegistry,
   getSessionDisplayName,
   hasActiveSessions,
+  pruneExpiredSessions,
   selectActiveRenderableSessions,
   selectFocusedActiveSession,
   selectLatestTerminalSession,
@@ -111,4 +116,99 @@ test('selectFocusedActiveSession prefers the freshest active change and waiting_
   });
 
   assert.equal(session.sessionId, 'B');
+});
+
+test('SessionRegistry upsertSession tracks state changes and sequence versions', () => {
+  const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'dot-codex-session-registry-'));
+  const registry = new SessionRegistry({ runtimeRoot });
+
+  const first = registry.upsertSession({
+    sessionId: 'A1',
+    state: 'starting',
+    command: 'codex',
+    args: [],
+    cwd: '/tmp/demo',
+    pid: 123
+  });
+  const second = registry.upsertSession({
+    sessionId: 'A1',
+    state: 'starting',
+    command: 'codex',
+    args: [],
+    cwd: '/tmp/demo',
+    pid: 123
+  });
+  const third = registry.upsertSession({
+    sessionId: 'A1',
+    state: 'running',
+    command: 'codex',
+    args: [],
+    cwd: '/tmp/demo',
+    pid: 123
+  });
+
+  assert.equal(first.sequenceVersion, 1);
+  assert.equal(second.sequenceVersion, 1);
+  assert.equal(third.sequenceVersion, 2);
+  assert.equal(third.lastStateChangeAt >= second.lastStateChangeAt, true);
+});
+
+test('SessionRegistry heartbeat refreshes timestamps', async () => {
+  const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'dot-codex-session-registry-'));
+  const registry = new SessionRegistry({ runtimeRoot });
+
+  registry.upsertSession({
+    sessionId: 'A1',
+    state: 'running',
+    command: 'codex',
+    args: [],
+    cwd: '/tmp/demo',
+    pid: 123
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  const refreshed = registry.heartbeat('A1');
+
+  assert.equal(Boolean(refreshed), true);
+  assert.equal(refreshed.updatedAt >= refreshed.startedAt, true);
+  assert.equal(refreshed.heartbeatAt >= refreshed.startedAt, true);
+});
+
+test('pruneExpiredSessions removes stale terminal sessions and dead active sessions', () => {
+  const removed = [];
+  const registry = {
+    removeSession(sessionId) {
+      removed.push(sessionId);
+    }
+  };
+  const now = Date.now();
+
+  const result = pruneExpiredSessions(registry, [
+    {
+      sessionId: 'TERM',
+      state: 'completed',
+      updatedAt: now - 10_000
+    },
+    {
+      sessionId: 'LIVE',
+      state: 'running',
+      heartbeatAt: now - 1_000,
+      updatedAt: now - 1_000,
+      pid: process.pid
+    },
+    {
+      sessionId: 'STALE',
+      state: 'running',
+      heartbeatAt: now - 10_000,
+      updatedAt: now - 10_000,
+      pid: 999999
+    }
+  ], {
+    now,
+    activeSessionStaleMs: 5_000,
+    terminalRetentionMs: 5_000
+  });
+
+  assert.deepEqual(result.sort(), ['STALE', 'TERM']);
+  assert.deepEqual(removed.sort(), ['STALE', 'TERM']);
 });

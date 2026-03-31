@@ -18,7 +18,13 @@ export const DEFAULT_TAKEOVER_REASSERT_MS = 24000;
 export const DEFAULT_MAX_ENTER_FRAMES = 2;
 export const DEFAULT_RUNNING_IDLE_MS = 9000;
 export const DEFAULT_RUNNING_FRAME_CYCLE_MS = 0;
+export const DEFAULT_HOOK_SESSION_TTL_MS = 60000;
 export const DEFAULT_LOG_LEVEL = 'info';
+
+export const AGENT_TYPES = Object.freeze({
+  CODEX: 'codex',
+  CLAUDE_CODE: 'claude-code'
+});
 
 export const RUN_STATES = Object.freeze({
   STARTING: 'starting',

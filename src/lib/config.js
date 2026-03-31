@@ -24,6 +24,7 @@ import {
   DEFAULT_TAKEOVER_REASSERT_MS,
   DEFAULT_TERMINAL_SESSION_TTL_MS,
   DEFAULT_ACTIVE_SESSION_STALE_MS,
+  DEFAULT_HOOK_SESSION_TTL_MS,
   DEFAULT_TERMINAL_PROMOTION_MS,
   DEFAULT_TASK_TYPE
 } from './constants.js';
@@ -66,6 +67,7 @@ const configSchema = z.object({
   restoreDelayMs: z.coerce.number().int().min(0).default(DEFAULT_RESTORE_DELAY_MS),
   defaultImagePath: z.string().min(1).optional(),
   logFilePath: z.string().min(1).optional(),
+  assetRoot: z.string().min(1).optional(),
   assetTheme: z.string().min(1).default(DEFAULT_ASSET_THEME),
   sessionName: z.string().min(1).optional(),
   runtimeRoot: z.string().min(1).default(DEFAULT_RUNTIME_ROOT),
@@ -74,6 +76,7 @@ const configSchema = z.object({
   rotateMaxSessions: z.coerce.number().int().min(1).max(20).default(DEFAULT_ROTATE_MAX_SESSIONS),
   terminalSessionTtlMs: z.coerce.number().int().min(0).default(DEFAULT_TERMINAL_SESSION_TTL_MS),
   activeSessionStaleMs: z.coerce.number().int().min(1000).default(DEFAULT_ACTIVE_SESSION_STALE_MS),
+  hookSessionTtlMs: z.coerce.number().int().min(1000).default(DEFAULT_HOOK_SESSION_TTL_MS),
   activeSessionFocusMs: z.coerce.number().int().min(0).default(DEFAULT_ACTIVE_SESSION_FOCUS_MS),
   startingDisplayDelayMs: z.coerce.number().int().min(0).default(DEFAULT_STARTING_DISPLAY_DELAY_MS),
   stateChangeSettleMs: z.coerce.number().int().min(0).default(DEFAULT_STATE_CHANGE_SETTLE_MS),
@@ -126,6 +129,7 @@ function buildEnvConfig() {
     restoreDelayMs: process.env.DOT_CODEX_RESTORE_DELAY_MS,
     defaultImagePath: process.env.DOT_CODEX_DEFAULT_IMAGE_PATH,
     logFilePath: process.env.DOT_CODEX_LOG_FILE,
+    assetRoot: process.env.DOT_CODEX_ASSET_ROOT,
     assetTheme: process.env.DOT_CODEX_ASSET_THEME,
     sessionName: process.env.DOT_CODEX_SESSION_NAME,
     runtimeRoot: process.env.DOT_CODEX_RUNTIME_ROOT,
@@ -134,6 +138,7 @@ function buildEnvConfig() {
     rotateMaxSessions: process.env.DOT_CODEX_ROTATE_MAX_SESSIONS,
     terminalSessionTtlMs: process.env.DOT_CODEX_TERMINAL_SESSION_TTL_MS,
     activeSessionStaleMs: process.env.DOT_CODEX_ACTIVE_SESSION_STALE_MS,
+    hookSessionTtlMs: process.env.DOT_CODEX_HOOK_SESSION_TTL_MS,
     activeSessionFocusMs: process.env.DOT_CODEX_ACTIVE_SESSION_FOCUS_MS,
     startingDisplayDelayMs: process.env.DOT_CODEX_STARTING_DISPLAY_DELAY_MS,
     stateChangeSettleMs: process.env.DOT_CODEX_STATE_CHANGE_SETTLE_MS,
@@ -172,7 +177,9 @@ export function loadConfig({ configPath = DEFAULT_CONFIG_PATH, overrides = {} } 
   return {
     ...parsed,
     configPath,
-    assetRoot: path.join(PROJECT_ROOT, 'assets', 'themes', parsed.assetTheme),
+    assetRoot: parsed.assetRoot
+      ? path.resolve(parsed.assetRoot)
+      : path.join(PROJECT_ROOT, 'assets', 'themes', parsed.assetTheme),
     runtimeRoot: path.resolve(parsed.runtimeRoot),
     logFilePath: parsed.logFilePath ? path.resolve(parsed.logFilePath) : path.join(path.resolve(parsed.runtimeRoot), 'dot-codex.log'),
     defaultImagePath: parsed.defaultImagePath ? path.resolve(parsed.defaultImagePath) : undefined

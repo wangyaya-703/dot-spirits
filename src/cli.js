@@ -31,6 +31,7 @@ program
   .option('--border <mode>', 'Quote/0 border mode: 0 or 1')
   .option('--dither-type <type>', 'Dot. dither type')
   .option('--dither-kernel <kernel>', 'Dot. dither kernel')
+  .option('--asset-root <path>', 'Absolute path to a custom asset theme root')
   .option('--min-refresh-interval-ms <ms>', 'Minimum interval between pushes')
   .option('--frame-interval-ms <ms>', 'Interval between enter frames')
   .option('--max-enter-frames <n>', 'Maximum number of enter animation frames to play per state change')
@@ -49,6 +50,7 @@ program
   .option('--rotate-max-sessions <n>', 'Maximum recent sessions to rotate')
   .option('--terminal-session-ttl-ms <ms>', 'How long completed/failed sessions stay in the rotation')
   .option('--active-session-stale-ms <ms>', 'How long to keep a live session without heartbeat')
+  .option('--hook-session-ttl-ms <ms>', 'How long an event-driven hook session stays alive without new events')
   .option('--active-session-focus-ms <ms>', 'How long a newly changed active session keeps focus before normal rotation resumes')
   .option('--starting-display-delay-ms <ms>', 'How long to wait before showing starting artwork for a newly started session')
   .option('--state-change-settle-ms <ms>', 'How long to wait before repainting rapid active-state changes on the same session')
@@ -102,6 +104,24 @@ program
   .option('--shell <shell>', 'Shell type', 'zsh')
   .option('--real-codex-path <path>', 'Explicit path to the real codex binary')
   .action(async (_, command) => handleAction(() => installWrapperCommand(getCombinedOptions(command))));
+
+program
+  .command('report')
+  .description('Record an external agent lifecycle event into the runtime session registry')
+  .option('--agent <type>', 'Agent type, for example codex or claude-code', 'claude-code')
+  .option('--event <name>', 'Lifecycle event name, for example start, running, waiting_input, stop')
+  .option('--session-id <id>', 'Stable external session id')
+  .option('--sequence <n>', 'Monotonic event sequence number')
+  .option('--cwd <path>', 'Working directory for the external session')
+  .option('--session-name <name>', 'Human-readable session name')
+  .option('--stop-reason <reason>', 'Stop reason used to distinguish completed vs cancelled')
+  .action(async (_, command) => handleAction(() => import('./commands/report.js').then(({ reportCommand }) => reportCommand(getCombinedOptions(command)))));
+
+program
+  .command('install-hooks')
+  .description('Print a Claude Code hooks snippet that forwards lifecycle events to dot-codex')
+  .option('--agent <type>', 'Agent type to generate hooks for', 'claude-code')
+  .action(async (_, command) => handleAction(() => import('./commands/install-hooks.js').then(({ installHooksCommand }) => installHooksCommand(getCombinedOptions(command)))));
 
 await program.parseAsync(['node', 'dot-codex', ...commanderArgs]);
 

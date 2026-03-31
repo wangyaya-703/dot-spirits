@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { spawn } from 'node:child_process';
-import { ACTIVE_STATES, RUN_STATES, TERMINAL_STATES } from './constants.js';
+import { ACTIVE_STATES, AGENT_TYPES, RUN_STATES, TERMINAL_STATES } from './constants.js';
 import { getProjectRoot } from './config.js';
 
 export class SessionRegistry {
@@ -66,15 +66,35 @@ export class SessionRegistry {
     pid,
     stateLabel,
     sessionName,
-    codexThreadId
+    codexThreadId,
+    agentType = AGENT_TYPES.CODEX,
+    heartbeatMode = 'periodic',
+    lastEventAt,
+    hookSessionTtlMs,
+    sequenceVersion
   }) {
     const now = Date.now();
     const current = this.readSession(sessionId);
+    if (Number.isInteger(sequenceVersion) && Number.isInteger(current?.sequenceVersion) && sequenceVersion <= current.sequenceVersion) {
+      this.logger?.debug?.({
+        sessionId,
+        currentSequenceVersion: current.sequenceVersion,
+        incomingSequenceVersion: sequenceVersion
+      }, 'Ignoring stale session upsert with non-monotonic sequenceVersion');
+      return current;
+    }
+
     const stateChanged = current?.state !== state;
+    const resolvedHeartbeatMode = heartbeatMode || current?.heartbeatMode || 'periodic';
+    const resolvedSequenceVersion = Number.isInteger(sequenceVersion)
+      ? sequenceVersion
+      : (stateChanged ? (current?.sequenceVersion || 0) + 1 : (current?.sequenceVersion || 1));
     const payload = {
       sessionId,
       sessionName: sessionName || current?.sessionName || null,
       codexThreadId: codexThreadId || current?.codexThreadId || null,
+      agentType: agentType || current?.agentType || AGENT_TYPES.CODEX,
+      heartbeatMode: resolvedHeartbeatMode,
       state,
       stateLabel: stateLabel || null,
       command,
@@ -84,9 +104,11 @@ export class SessionRegistry {
       terminal: TERMINAL_STATES.has(state),
       startedAt: current?.startedAt || now,
       updatedAt: now,
-      heartbeatAt: now,
+      heartbeatAt: resolvedHeartbeatMode === 'periodic' ? now : (current?.heartbeatAt || null),
+      lastEventAt: resolvedHeartbeatMode === 'event-driven' ? (lastEventAt || now) : (current?.lastEventAt || null),
+      hookSessionTtlMs: hookSessionTtlMs || current?.hookSessionTtlMs || null,
       lastStateChangeAt: stateChanged ? now : (current?.lastStateChangeAt || now),
-      sequenceVersion: stateChanged ? (current?.sequenceVersion || 0) + 1 : (current?.sequenceVersion || 1),
+      sequenceVersion: resolvedSequenceVersion,
       exitedAt: TERMINAL_STATES.has(state) ? now : (current?.exitedAt || null)
     };
     this.writeSession(sessionId, payload);
@@ -97,6 +119,10 @@ export class SessionRegistry {
     const current = this.readSession(sessionId);
     if (!current) {
       return null;
+    }
+
+    if (current.heartbeatMode === 'event-driven') {
+      return current;
     }
 
     const next = {
@@ -201,17 +227,17 @@ export function selectRenderableSessions(sessions, {
   now = Date.now(),
   rotateMaxSessions,
   activeSessionStaleMs,
-  terminalSessionTtlMs
+  terminalSessionTtlMs,
+  hookSessionTtlMs
 }) {
   const filtered = sessions
     .filter((session) => session?.sessionId && session?.state)
-    .filter((session) => {
-      if (!TERMINAL_STATES.has(session.state)) {
-        return now - (session.heartbeatAt || session.updatedAt || 0) <= activeSessionStaleMs;
-      }
-
-      return now - (session.updatedAt || 0) <= terminalSessionTtlMs;
-    })
+    .filter((session) => isSessionFresh(session, {
+      now,
+      activeSessionStaleMs,
+      terminalSessionTtlMs,
+      hookSessionTtlMs
+    }))
     .sort((left, right) => (right.updatedAt || 0) - (left.updatedAt || 0))
     .slice(0, rotateMaxSessions);
 
@@ -221,21 +247,33 @@ export function selectRenderableSessions(sessions, {
 export function selectActiveRenderableSessions(sessions, {
   now = Date.now(),
   rotateMaxSessions,
-  activeSessionStaleMs
+  activeSessionStaleMs,
+  hookSessionTtlMs
 }) {
   return sessions
     .filter((session) => session?.sessionId && session?.state)
     .filter((session) =>
       ACTIVE_STATES.has(session.state) &&
-      now - (session.heartbeatAt || session.updatedAt || 0) <= activeSessionStaleMs
+      isSessionFresh(session, {
+        now,
+        activeSessionStaleMs,
+        terminalSessionTtlMs: 0,
+        hookSessionTtlMs
+      })
     )
     .sort((left, right) => (right.updatedAt || 0) - (left.updatedAt || 0))
     .slice(0, rotateMaxSessions);
 }
 
-export function hasActiveSessions(sessions, { now = Date.now(), activeSessionStaleMs }) {
+export function hasActiveSessions(sessions, { now = Date.now(), activeSessionStaleMs, hookSessionTtlMs }) {
   return sessions.some((session) =>
-    ACTIVE_STATES.has(session.state) && now - (session.heartbeatAt || session.updatedAt || 0) <= activeSessionStaleMs
+    ACTIVE_STATES.has(session.state) &&
+    isSessionFresh(session, {
+      now,
+      activeSessionStaleMs,
+      terminalSessionTtlMs: 0,
+      hookSessionTtlMs
+    })
   );
 }
 
@@ -304,13 +342,14 @@ export function defaultSessionLabel(state) {
 export function pruneExpiredSessions(registry, sessions, {
   now = Date.now(),
   activeSessionStaleMs,
-  terminalRetentionMs
+  terminalRetentionMs,
+  hookSessionTtlMs
 }) {
   const removed = [];
 
   for (const session of sessions) {
     const updatedAt = session.updatedAt || 0;
-    const heartbeatAt = session.heartbeatAt || updatedAt;
+    const livenessAt = getSessionLivenessTimestamp(session);
 
     if (TERMINAL_STATES.has(session.state)) {
       if (now - updatedAt > terminalRetentionMs) {
@@ -320,13 +359,48 @@ export function pruneExpiredSessions(registry, sessions, {
       continue;
     }
 
-    if (now - heartbeatAt > activeSessionStaleMs && !isPidRunning(session.pid)) {
+    if (session.heartbeatMode === 'event-driven') {
+      const eventTtlMs = session.hookSessionTtlMs || hookSessionTtlMs || activeSessionStaleMs;
+      if (now - livenessAt > eventTtlMs) {
+        registry.removeSession(session.sessionId);
+        removed.push(session.sessionId);
+      }
+      continue;
+    }
+
+    if (now - livenessAt > activeSessionStaleMs && !isPidRunning(session.pid)) {
       registry.removeSession(session.sessionId);
       removed.push(session.sessionId);
     }
   }
 
   return removed;
+}
+
+function getSessionLivenessTimestamp(session) {
+  if (session?.heartbeatMode === 'event-driven') {
+    return session.lastEventAt || session.updatedAt || 0;
+  }
+
+  return session.heartbeatAt || session.updatedAt || 0;
+}
+
+function isSessionFresh(session, {
+  now,
+  activeSessionStaleMs,
+  terminalSessionTtlMs,
+  hookSessionTtlMs
+}) {
+  if (TERMINAL_STATES.has(session.state)) {
+    return now - (session.updatedAt || 0) <= terminalSessionTtlMs;
+  }
+
+  if (session.heartbeatMode === 'event-driven') {
+    const ttlMs = session.hookSessionTtlMs || hookSessionTtlMs || activeSessionStaleMs;
+    return now - getSessionLivenessTimestamp(session) <= ttlMs;
+  }
+
+  return now - getSessionLivenessTimestamp(session) <= activeSessionStaleMs;
 }
 
 export function getSessionDisplayName(session, { maxLength = 12 } = {}) {

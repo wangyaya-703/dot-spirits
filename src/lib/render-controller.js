@@ -3,10 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { TERMINAL_STATES } from './constants.js';
 import { composeFrameWithOverlay } from './frame-overlay.js';
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+import { sleep } from './utils.js';
 
 function createAbortError(message) {
   const error = new Error(message);

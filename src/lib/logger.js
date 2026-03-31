@@ -5,9 +5,13 @@ import { DEFAULT_LOG_LEVEL } from './constants.js';
 
 export function createLogger({
   level = process.env.DOT_CODEX_LOG_LEVEL || DEFAULT_LOG_LEVEL,
-  logFilePath
+  logFilePath,
+  stdout = true
 } = {}) {
-  const streams = [{ stream: process.stdout }];
+  const streams = [];
+  if (stdout) {
+    streams.push({ stream: process.stdout });
+  }
   if (logFilePath) {
     fs.mkdirSync(path.dirname(logFilePath), { recursive: true });
     streams.push({
@@ -23,5 +27,5 @@ export function createLogger({
     level,
     base: undefined,
     timestamp: pino.stdTimeFunctions.isoTime
-  }, pino.multistream(streams));
+  }, pino.multistream(streams.length > 0 ? streams : [{ stream: process.stderr }]));
 }

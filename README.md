@@ -1,5 +1,7 @@
 # dot-codex
 
+`dot-codex` is a local CLI that mirrors Codex session state to a Quote/0 / Dot E-Ink device through a dedicated `Image API` slot. It wraps `codex`, tracks multiple sessions, and uses a background rotator to manage takeover, release, and render cadence.
+
 `dot-codex` 是一个本地 CLI，用来把多个 Codex 会话的状态同步到 Quote/0 / Dot 设备上的专用 `Image API` 内容位。
 
 它不是简单的“推一张图”。当前版本已经具备：
@@ -7,6 +9,7 @@
 - 暹罗猫像素风状态动画
 - 会话 `ID` 和状态名叠字
 - `codex` shell 包装器，做到直接输入 `codex` 自动触发
+- `claude-code` hook 上报入口，支持 event-driven session
 - 多会话轮播
 - `waiting_input` 高优先级抢占
 - 结果态短时保留后释放接管
@@ -191,21 +194,21 @@ codex
 实际上会变成：
 
 ```bash
-node /Users/bytedance/dot-codex/src/cli.js run -- /真实/codex "$@"
+"$DOT_CODEX_NODE_BIN" "$DOT_CODEX_ROOT/src/cli.js" run -- "$DOT_CODEX_REAL_CODEX" "$@"
 ```
 
 ### 4.2 安装方式
 
 ```bash
-cd /Users/bytedance/dot-codex
+cd /path/to/dot-codex
 node src/cli.js install-wrapper
 source ~/.zshrc
 ```
 
 安装后会写入：
 
-- wrapper 脚本：[`~/.dot-codex/bin/codex`](/Users/bytedance/.dot-codex/bin/codex)
-- zsh 配置块：[`~/.zshrc`](/Users/bytedance/.zshrc)
+- wrapper 脚本：`~/.dot-codex/bin/codex`
+- zsh 配置块：`~/.zshrc`
 
 ### 4.3 包装器做的事
 
@@ -219,24 +222,24 @@ source ~/.zshrc
 关键目录：
 
 - 主题资源：
-  - [`assets/themes/siamese-sticker`](/Users/bytedance/dot-codex/assets/themes/siamese-sticker)
+  - [`assets/themes/siamese-sticker`](assets/themes/siamese-sticker)
 - CLI 入口：
-  - [`src/cli.js`](/Users/bytedance/dot-codex/src/cli.js)
+  - [`src/cli.js`](src/cli.js)
 - Codex 包装运行：
-  - [`src/commands/run.js`](/Users/bytedance/dot-codex/src/commands/run.js)
+  - [`src/commands/run.js`](src/commands/run.js)
 - 后台 rotator：
-  - [`src/commands/daemon.js`](/Users/bytedance/dot-codex/src/commands/daemon.js)
+  - [`src/commands/daemon.js`](src/commands/daemon.js)
 - wrapper 安装：
-  - [`src/commands/install-wrapper.js`](/Users/bytedance/dot-codex/src/commands/install-wrapper.js)
+  - [`src/commands/install-wrapper.js`](src/commands/install-wrapper.js)
 - 会话注册：
-  - [`src/lib/session-registry.js`](/Users/bytedance/dot-codex/src/lib/session-registry.js)
+  - [`src/lib/session-registry.js`](src/lib/session-registry.js)
 - 动画推送控制：
-  - [`src/lib/render-controller.js`](/Users/bytedance/dot-codex/src/lib/render-controller.js)
+  - [`src/lib/render-controller.js`](src/lib/render-controller.js)
 - 叠字：
-  - [`src/lib/frame-overlay.js`](/Users/bytedance/dot-codex/src/lib/frame-overlay.js)
+  - [`src/lib/frame-overlay.js`](src/lib/frame-overlay.js)
 - 生成脚本：
-  - [`scripts/generate-gemini-reference-holds.py`](/Users/bytedance/dot-codex/scripts/generate-gemini-reference-holds.py)
-  - [`scripts/generate-gemini-siamese-theme.py`](/Users/bytedance/dot-codex/scripts/generate-gemini-siamese-theme.py)
+  - [`scripts/generate-gemini-reference-holds.py`](scripts/generate-gemini-reference-holds.py)
+  - [`scripts/generate-gemini-siamese-theme.py`](scripts/generate-gemini-siamese-theme.py)
 
 ## 6. 安装
 
@@ -250,7 +253,7 @@ source ~/.zshrc
 安装依赖：
 
 ```bash
-cd /Users/bytedance/dot-codex
+cd /path/to/dot-codex
 npm install
 ```
 
@@ -264,7 +267,7 @@ npm install
 
 ### 7.1 `.env`
 
-参考 [`.env.example`](/Users/bytedance/dot-codex/.env.example)。
+参考 [`.env.example`](.env.example)。
 
 示例：
 
@@ -285,6 +288,7 @@ DOT_CODEX_ROTATE_INTERVAL_MS=24000
 DOT_CODEX_ROTATOR_POLL_MS=1000
 DOT_CODEX_ROTATE_MAX_SESSIONS=5
 DOT_CODEX_ACTIVE_SESSION_STALE_MS=90000
+DOT_CODEX_HOOK_SESSION_TTL_MS=60000
 DOT_CODEX_ACTIVE_SESSION_FOCUS_MS=15000
 DOT_CODEX_STARTING_DISPLAY_DELAY_MS=4000
 DOT_CODEX_STATE_CHANGE_SETTLE_MS=6000
@@ -293,7 +297,7 @@ DOT_CODEX_TERMINAL_PROMOTION_MS=12000
 DOT_CODEX_TAKEOVER_REASSERT_MS=24000
 DOT_CODEX_RESTORE_MODE=hold
 DOT_CODEX_RESTORE_DELAY_MS=15000
-DOT_CODEX_LOG_FILE=/Users/bytedance/.dot-codex/runtime/dot-codex.log
+DOT_CODEX_LOG_FILE=~/.dot-codex/runtime/dot-codex.log
 DOT_CODEX_SESSION_NAME=
 ```
 
@@ -310,6 +314,10 @@ DOT_CODEX_SESSION_NAME=
 
 - `DOT_CODEX_ACTIVE_SESSION_STALE_MS`
   - 活跃会话多久没有心跳就视为失效
+
+- `DOT_CODEX_HOOK_SESSION_TTL_MS`
+  - event-driven hook session 在没有新事件时能保留多久
+  - 主要用于 Claude Code 这类短命 hook 上报模型
 
 - `DOT_CODEX_ACTIVE_SESSION_FOCUS_MS`
   - 新开对话或刚变更状态的活跃会话，优先独占屏幕多久再恢复普通轮播
@@ -334,7 +342,11 @@ DOT_CODEX_SESSION_NAME=
 
 - `DOT_CODEX_LOG_FILE`
   - rotator 和 run 命令的结构化日志文件
-  - 默认写到 [`~/.dot-codex/runtime/dot-codex.log`](/Users/bytedance/.dot-codex/runtime/dot-codex.log)
+  - 默认写到 `~/.dot-codex/runtime/dot-codex.log`
+
+- `DOT_CODEX_ASSET_ROOT`
+  - 直接指定一套主题资源目录
+  - 如果设置了它，会覆盖 `DOT_CODEX_ASSET_THEME`
 
 - `DOT_CODEX_MAX_ENTER_FRAMES`
   - 每次状态切换最多播放几张 `enter` 帧
@@ -397,6 +409,18 @@ node src/cli.js sessions
 node src/cli.js sessions --json
 ```
 
+上报外部 agent 生命周期事件：
+
+```bash
+printf '{"session_id":"abc123","cwd":"/tmp/demo","hook_event_name":"SessionStart"}' | node src/cli.js report --agent claude-code --sequence 1
+```
+
+输出 Claude Code hooks 配置片段：
+
+```bash
+node src/cli.js install-hooks
+```
+
 启动后台 rotator：
 
 ```bash
@@ -437,7 +461,7 @@ npm test
 
 最终主题：
 
-- [`siamese-sticker`](/Users/bytedance/dot-codex/assets/themes/siamese-sticker)
+- [`siamese-sticker`](assets/themes/siamese-sticker)
 
 每个状态都包含：
 
@@ -486,7 +510,7 @@ npm test
 
 仓库里只保留：
 
-- [`config/gemini.env.example`](/Users/bytedance/dot-codex/config/gemini.env.example)
+- [`config/gemini.env.example`](config/gemini.env.example)
 
 不要把真实 `gemini.env` 提交进仓库。
 

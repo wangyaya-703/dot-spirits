@@ -14,16 +14,17 @@ export async function installWrapperCommand(cliOptions) {
   }
 
   const realCodexPath = cliOptions.realCodexPath || resolveRealCodexPath();
+  const nodePath = process.execPath;
   const wrapperBinDir = path.join(os.homedir(), '.dot-codex', 'bin');
   const wrapperPath = path.join(wrapperBinDir, 'codex');
   fs.mkdirSync(wrapperBinDir, { recursive: true });
 
-  fs.writeFileSync(wrapperPath, buildWrapperScript(realCodexPath), { mode: 0o755 });
+  fs.writeFileSync(wrapperPath, buildWrapperScript({ realCodexPath, nodePath }), { mode: 0o755 });
   fs.chmodSync(wrapperPath, 0o755);
 
   const zshrcPath = path.join(os.homedir(), '.zshrc');
   const current = fs.existsSync(zshrcPath) ? fs.readFileSync(zshrcPath, 'utf8') : '';
-  const block = buildZshBlock(realCodexPath);
+  const block = buildZshBlock({ realCodexPath, nodePath });
   const next = upsertMarkedBlock(current, block);
   fs.writeFileSync(zshrcPath, next);
 
@@ -48,19 +49,21 @@ function resolveRealCodexPath() {
   return nonWrapper;
 }
 
-function buildWrapperScript(realCodexPath) {
+function buildWrapperScript({ realCodexPath, nodePath }) {
   const root = getProjectRoot();
   return `#!/bin/zsh
 export DOT_CODEX_ROOT="${root}"
 export DOT_CODEX_REAL_CODEX="${realCodexPath}"
-exec node "${root}/src/cli.js" run -- "$DOT_CODEX_REAL_CODEX" "$@"
+export DOT_CODEX_NODE_BIN="${nodePath}"
+exec "$DOT_CODEX_NODE_BIN" "$DOT_CODEX_ROOT/src/cli.js" run -- "$DOT_CODEX_REAL_CODEX" "$@"
 `;
 }
 
-function buildZshBlock(realCodexPath) {
+function buildZshBlock({ realCodexPath, nodePath }) {
   return `${ZSH_BEGIN}
 export DOT_CODEX_ROOT="${getProjectRoot()}"
 export DOT_CODEX_REAL_CODEX="${realCodexPath}"
+export DOT_CODEX_NODE_BIN="${nodePath}"
 export PATH="$HOME/.dot-codex/bin:$PATH"
 ${ZSH_END}`;
 }
