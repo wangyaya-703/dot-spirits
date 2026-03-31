@@ -174,9 +174,11 @@ export async function daemonCommand(cliOptions) {
         if (shouldPushSummary) {
           await pushSummaryFrame({
             client,
+            assetStore,
             config,
             logger,
             sessions: activeSessions,
+            primarySession: selectSummaryPrimarySession({ activeSessions, focusedActive }),
             reason: shouldReassertActiveTakeover ? 'summary_reclaim' : 'summary_update',
             runtimeState: state
           });
@@ -452,8 +454,14 @@ async function pushSessionFrames({ client, assetStore, config, logger, session, 
   await refreshOwnedRender({ client, runtimeState, logger });
 }
 
-async function pushSummaryFrame({ client, config, logger, sessions, reason = 'summary_update', runtimeState }) {
-  const rendered = composeDashboardFrame({ sessions });
+async function pushSummaryFrame({ client, assetStore, config, logger, sessions, primarySession, reason = 'summary_update', runtimeState }) {
+  const backgroundBuffer = primarySession
+    ? assetStore.readImageBuffer(assetStore.getHoldFrame(primarySession.state))
+    : null;
+  const rendered = composeDashboardFrame({
+    imageBuffer: backgroundBuffer,
+    sessions
+  });
   const delta = Date.now() - runtimeState.lastPushAt;
   if (delta < config.minRefreshIntervalMs) {
     await sleep(config.minRefreshIntervalMs - delta);
@@ -479,6 +487,8 @@ async function pushSummaryFrame({ client, config, logger, sessions, reason = 'su
   runtimeState.lastFingerprint = fingerprint;
   logger.info({
     reason,
+    primarySessionId: primarySession?.sessionId || null,
+    primaryState: primarySession?.state || null,
     sessions: sessions.map((session) => ({
       sessionId: session.sessionId,
       agentType: session.agentType,
@@ -566,4 +576,17 @@ function buildSummarySignature(sessions) {
     ].join(':'))
     .sort()
     .join('|');
+}
+
+function selectSummaryPrimarySession({ activeSessions, focusedActive }) {
+  const waitingInput = activeSessions.find((session) => session.state === RUN_STATES.WAITING_INPUT);
+  if (waitingInput) {
+    return waitingInput;
+  }
+
+  if (focusedActive) {
+    return focusedActive;
+  }
+
+  return activeSessions[0] || null;
 }

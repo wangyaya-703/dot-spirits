@@ -1,5 +1,6 @@
 import { bootstrapRuntime, printJson } from '../lib/command-helpers.js';
 import { resolveImageTaskKey } from '../lib/device-service.js';
+import { readRuntimeStatus } from '../lib/runtime-status.js';
 
 export async function doctorCommand(cliOptions) {
   const { config, client, assetStore } = await bootstrapRuntime({
@@ -11,6 +12,7 @@ export async function doctorCommand(cliOptions) {
   const status = await client.getStatus();
   const tasks = await client.listTasks(config.taskType);
   const imageTasks = tasks.filter((task) => task.type === 'IMAGE_API');
+  const runtime = readRuntimeStatus({ config, logger: null });
   let selectedTaskKey = config.taskKey || null;
   let taskResolution = null;
 
@@ -48,12 +50,22 @@ export async function doctorCommand(cliOptions) {
       selectedTaskKey,
       selectedTaskKeySource: taskResolution?.source ?? null
     },
+    runtime: {
+      rotatorPid: runtime.rotator.pid,
+      mode: runtime.rotator.status?.mode || 'idle',
+      currentSessionId: runtime.rotator.status?.currentSessionId || null,
+      activeSessions: runtime.summary.activeSessions,
+      takeoverLocked: runtime.summary.takeoverLocked,
+      summaryBoardActive: runtime.summary.summaryBoardActive
+    },
     checks: {
       apiKeyConfigured: Boolean(config.apiKey),
       deviceIdConfigured: Boolean(config.deviceId),
       hasImageApiTask: imageTasks.length > 0,
       canResolveTaskKey: Boolean(selectedTaskKey),
-      hasCurrentRenderImage: Boolean(status?.renderInfo?.current?.image?.length)
+      hasCurrentRenderImage: Boolean(status?.renderInfo?.current?.image?.length),
+      rotatorRunning: Boolean(runtime.rotator.pid),
+      takeoverLocked: runtime.summary.takeoverLocked
     }
   };
 

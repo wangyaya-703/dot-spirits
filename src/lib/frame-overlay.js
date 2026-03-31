@@ -55,25 +55,27 @@ export function composeFrameWithOverlay(imageBuffer, { state, stateLabel, sessio
   return PNG.sync.write(png);
 }
 
-export function composeDashboardFrame({ sessions = [], width = 296, height = 152 } = {}) {
-  const png = createWhitePng(width, height);
+export function composeDashboardFrame({ imageBuffer = null, sessions = [], width = 296, height = 152 } = {}) {
+  const png = imageBuffer ? PNG.sync.read(imageBuffer) : createWhitePng(width, height);
   const visibleSessions = sessions.slice(0, 4);
   const overflowCount = Math.max(0, sessions.length - visibleSessions.length);
-  const title = sessions.length > 1 ? `AGENTS ${sessions.length}` : 'AGENT';
+  const title = sessions.length > 1 ? `LIVE ${sessions.length}` : 'LIVE 1';
+  const panelHeight = 58;
+  const panelY = png.height - panelHeight - 8;
+  drawRect(png, 8, panelY, png.width - 16, panelHeight, 255);
+  drawRect(png, 8, panelY, png.width - 16, 1, 0);
+  drawRect(png, 8, panelY + panelHeight - 1, png.width - 16, 1, 0);
+  drawRect(png, 8, panelY, 1, panelHeight, 0);
+  drawRect(png, png.width - 9, panelY, 1, panelHeight, 0);
+  drawBitmapText(png, title, 14, panelY + 6, DASHBOARD_TITLE_SCALE);
 
-  drawRect(png, 0, 0, width, 1, 0);
-  drawRect(png, 0, height - 1, width, 1, 0);
-  drawRect(png, 0, 0, 1, height, 0);
-  drawRect(png, width - 1, 0, 1, height, 0);
-  drawBitmapText(png, title, DASHBOARD_PADDING, 6, DASHBOARD_TITLE_SCALE);
-
-  const gridTop = 22;
-  const gridHeight = height - gridTop - 10;
+  const gridTop = panelY + 18;
+  const gridHeight = panelHeight - 24;
   const columns = visibleSessions.length <= 1 ? 1 : 2;
   const rows = visibleSessions.length <= 2 ? visibleSessions.length : 2;
   const tileWidth = columns === 1
-    ? width - DASHBOARD_PADDING * 2
-    : Math.floor((width - DASHBOARD_PADDING * 2 - DASHBOARD_GAP) / 2);
+    ? png.width - 28
+    : Math.floor((png.width - 28 - DASHBOARD_GAP) / 2);
   const tileHeight = rows <= 1
     ? gridHeight
     : Math.floor((gridHeight - DASHBOARD_GAP) / 2);
@@ -81,7 +83,7 @@ export function composeDashboardFrame({ sessions = [], width = 296, height = 152
   visibleSessions.forEach((session, index) => {
     const col = columns === 1 ? 0 : index % 2;
     const row = columns === 1 ? index : Math.floor(index / 2);
-    const x = DASHBOARD_PADDING + col * (tileWidth + DASHBOARD_GAP);
+    const x = 14 + col * (tileWidth + DASHBOARD_GAP);
     const y = gridTop + row * (tileHeight + DASHBOARD_GAP);
     drawSessionTile(png, session, { x, y, width: tileWidth, height: tileHeight });
   });
@@ -92,8 +94,8 @@ export function composeDashboardFrame({ sessions = [], width = 296, height = 152
     drawBitmapText(
       png,
       label,
-      width - DASHBOARD_PADDING - labelWidth,
-      6,
+      png.width - 14 - labelWidth,
+      panelY + 6,
       DASHBOARD_TILE_SCALE
     );
   }
@@ -114,14 +116,12 @@ function drawSessionTile(png, session, { x, y, width, height }) {
     drawRect(png, x + width - 3, y + 2, 1, height - 4, 0);
   }
 
-  const name = normalizeDashboardText(session.sessionName || session.sessionId, 10);
-  const state = normalizeDashboardText(getStateDisplayLabel(session.state, session.stateLabel), 10);
+  const name = normalizeDashboardText(session.sessionName || session.sessionId, 8);
+  const state = normalizeDashboardText(getStateDisplayLabel(session.state, session.stateLabel), 8);
   const agent = agentBadge(session.agentType);
-  const id = normalizeDashboardText(session.sessionId, 6);
 
-  drawBitmapText(png, name, x + 6, y + 6, DASHBOARD_TILE_SCALE);
-  drawBitmapText(png, state, x + 6, y + 18, DASHBOARD_TILE_SCALE);
-  drawBitmapText(png, `${agent}:${id}`, x + 6, y + 30, DASHBOARD_TILE_SCALE);
+  drawBitmapText(png, `${agent} ${name}`, x + 4, y + 3, DASHBOARD_TILE_SCALE);
+  drawBitmapText(png, state, x + 4, y + 12, DASHBOARD_TILE_SCALE);
 }
 
 function buildSessionBadge({ sessionId, sessionName }) {

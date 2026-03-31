@@ -99,8 +99,9 @@
 补充：
 
 - 当同时存在多个活跃会话时，Dot 不再单会话轮播
-- 会切换到一张汇总面板，把多个会话收束在同一个分屏窗口里
-- 这样 `codex` 和 `claude-code` 混跑时，不会来回闪切单个会话卡片
+- 会保留主屏幕上的暹罗猫状态图，并在底部切出一个会话状态条
+- 多个活跃会话会被收束到这个底部面板里，而不是全屏切成白底 summary 页
+- 这样 `codex` 和 `claude-code` 混跑时，不会来回闪切单个会话卡片，同时主视觉仍然保持统一
 
 4. 终态会话
 - `completed` / `failed` / `cancelled`
@@ -385,6 +386,13 @@ node src/cli.js tasks
 node src/cli.js snapshot
 ```
 
+`snapshot` 现在也会输出本地 runtime 摘要，包括：
+
+- `takeoverLocked`
+- `summaryBoardActive`
+- `currentSessionId`
+- `activeSessionIds`
+
 手工推一个状态图：
 
 ```bash
@@ -408,6 +416,12 @@ node src/cli.js run -- codex
 ```bash
 node src/cli.js sessions
 ```
+
+`sessions` 表格现在会额外显示：
+
+- `AGENT`
+- `TakeoverLocked`
+- `summary_board`
 
 查看机器可读 JSON：
 
@@ -535,7 +549,7 @@ npm test
 5. Dot 会按优先级和轮播策略显示：
    - `waiting_input` 优先
    - 单个活跃会话时，当前展示会话实时更新
-   - 多个活跃会话时，改成同屏汇总面板
+   - 多个活跃会话时，主图保持暹罗猫状态画，底部附带多会话状态条
    - 新进入 `done/failed` 的会话会被提升展示一次
    - takeover 期间只有在检测到设备已经被其他内容盖掉时才会抢回
    - 长时间 `running` 会低频切换另一张 `running` 图

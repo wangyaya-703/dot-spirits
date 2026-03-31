@@ -38,3 +38,31 @@ test('composeDashboardFrame renders a multi-session summary board', () => {
   assert.equal(png.height, 152);
   assert.notEqual(Buffer.compare(composed, PNG.sync.write(blank)), 0);
 });
+
+test('composeDashboardFrame preserves a supplied background image above the session panel', () => {
+  const base = new PNG({ width: 296, height: 152 });
+  base.data.fill(255);
+  for (let y = 0; y < 70; y += 1) {
+    for (let x = 0; x < 70; x += 1) {
+      const index = (base.width * y + x) * 4;
+      base.data[index] = 0;
+      base.data[index + 1] = 0;
+      base.data[index + 2] = 0;
+      base.data[index + 3] = 255;
+    }
+  }
+
+  const composed = composeDashboardFrame({
+    imageBuffer: PNG.sync.write(base),
+    sessions: [
+      { sessionId: 'A1', sessionName: 'alpha', state: 'running', agentType: 'codex' },
+      { sessionId: 'B2', sessionName: 'beta', state: 'waiting_input', agentType: 'claude-code' }
+    ]
+  });
+
+  const png = PNG.sync.read(composed);
+  const topLeftIndex = 0;
+  assert.equal(png.data[topLeftIndex], 0);
+  assert.equal(png.data[topLeftIndex + 1], 0);
+  assert.equal(png.data[topLeftIndex + 2], 0);
+});
