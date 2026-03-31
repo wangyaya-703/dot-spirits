@@ -2,8 +2,6 @@ import { PNG } from 'pngjs';
 import { createWhitePng, drawBitmapText, drawRect, measureBitmapText } from './bitmap-font.js';
 import { AGENT_TYPES } from './constants.js';
 
-const FOOTER_HEIGHT = 18;
-const FOOTER_GAP = 6;
 const SCALE = 2;
 const DASHBOARD_TILE_SCALE = 1;
 const DASHBOARD_COLUMN_WIDTH = 80;
@@ -32,36 +30,31 @@ export function getStateDisplayLabel(state, fallback) {
 }
 
 export function composeFrameWithOverlay(imageBuffer, { state, stateLabel, sessionId, sessionName, agentType } = {}) {
-  const sessionText = buildSingleSessionTag({ sessionId, sessionName, agentType });
-  if (!sessionText && !stateLabel && !state) {
+  const tag = buildSingleSessionTag({ state, stateLabel, sessionId, sessionName, agentType });
+  if (!tag) {
     return imageBuffer;
   }
 
   const png = PNG.sync.read(imageBuffer);
-  const labelText = compactStateLabel(state, stateLabel);
+  const width = DASHBOARD_COLUMN_WIDTH;
+  const x = png.width - DASHBOARD_COLUMN_X - width;
+  const y = DASHBOARD_TOP_Y;
 
-  const footerY = png.height - FOOTER_HEIGHT - 8;
-  const stateWidth = Math.max(40, measureBitmapText(labelText, DASHBOARD_TILE_SCALE) + 12);
   drawLabeledBox(png, {
-    x: 8,
-    y: footerY,
-    width: stateWidth,
-    height: FOOTER_HEIGHT,
-    text: labelText
+    x,
+    y,
+    width,
+    height: DASHBOARD_HEADER_HEIGHT,
+    text: tag.agent
   });
-  if (sessionText) {
-    const sessionWidth = Math.min(
-      png.width - 24 - stateWidth - FOOTER_GAP,
-      Math.max(84, measureBitmapText(sessionText, DASHBOARD_TILE_SCALE) + 12)
-    );
-    drawLabeledBox(png, {
-      x: png.width - 8 - sessionWidth,
-      y: footerY,
-      width: sessionWidth,
-      height: FOOTER_HEIGHT,
-      text: sessionText
-    });
-  }
+  drawLabeledBox(png, {
+    x,
+    y: y + DASHBOARD_HEADER_HEIGHT + DASHBOARD_ROW_GAP,
+    width,
+    height: DASHBOARD_ROW_HEIGHT,
+    text: tag.detail,
+    urgent: state === 'waiting_input'
+  });
 
   return PNG.sync.write(png);
 }
@@ -195,11 +188,15 @@ function compactStateLabel(state, fallback) {
   }
 }
 
-function buildSingleSessionTag({ sessionId, sessionName, agentType }) {
-  if (!sessionId && !sessionName && !agentType) {
-    return '';
+function buildSingleSessionTag({ state, stateLabel, sessionId, sessionName, agentType }) {
+  if (!sessionId && !sessionName && !agentType && !state && !stateLabel) {
+    return null;
   }
   const agent = agentType === AGENT_TYPES.CLAUDE_CODE ? 'CLAUDE' : 'CODEX';
-  const name = normalizeDashboardText(sessionName || sessionId, 8);
-  return name ? `${agent} ${name}` : agent;
+  const name = normalizeDashboardText(sessionName || sessionId, 4);
+  const compactState = compactStateLabel(state, stateLabel);
+  return {
+    agent,
+    detail: name ? `${name}:${compactState}` : compactState
+  };
 }
