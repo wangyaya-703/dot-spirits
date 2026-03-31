@@ -3,7 +3,15 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { buildReportDescriptor, mapReportEventToState, recordReportEvent } from '../src/commands/report.js';
+import { PassThrough } from 'node:stream';
+import {
+  buildReportDescriptor,
+  generateFallbackSequence,
+  mapReportEventToState,
+  normalizeSequence,
+  readHookInput,
+  recordReportEvent
+} from '../src/commands/report.js';
 import { SessionRegistry, pruneExpiredSessions } from '../src/lib/session-registry.js';
 import { AGENT_TYPES, RUN_STATES } from '../src/lib/constants.js';
 
@@ -125,4 +133,33 @@ test('event-driven sessions expire by hook ttl', () => {
 
   assert.deepEqual(result, ['CLAUDE']);
   assert.deepEqual(removed, ['CLAUDE']);
+});
+
+test('normalizeSequence fallback is monotonic even within the same millisecond', () => {
+  const now = Date.now();
+  const first = generateFallbackSequence(now);
+  const second = generateFallbackSequence(now);
+
+  assert.equal(second > first, true);
+  assert.equal(normalizeSequence(undefined) > 0, true);
+});
+
+test('readHookInput returns parsed stdin JSON', async () => {
+  const stdin = new PassThrough();
+  const promise = readHookInput({ stdin, timeoutMs: 50 });
+  stdin.end('{"session_id":"abc123","cwd":"/tmp/demo"}');
+
+  const payload = await promise;
+  assert.equal(payload.session_id, 'abc123');
+  assert.equal(payload.cwd, '/tmp/demo');
+});
+
+test('readHookInput returns an empty object after timeout when stdin never ends', async () => {
+  const stdin = new PassThrough();
+  const startedAt = Date.now();
+  const payload = await readHookInput({ stdin, timeoutMs: 20 });
+
+  assert.deepEqual(payload, {});
+  assert.equal(Date.now() - startedAt >= 15, true);
+  stdin.destroy();
 });

@@ -441,6 +441,11 @@ printf '{"session_id":"abc123","cwd":"/tmp/demo","hook_event_name":"SessionStart
 node src/cli.js install-hooks
 ```
 
+生成的 hook 命令会：
+
+- 透传 Claude hook stdin 里的 `session_id`
+- 使用可移植的 Node 时钟序列号，不依赖 shell 的纳秒级 `date`
+
 启动后台 rotator：
 
 ```bash

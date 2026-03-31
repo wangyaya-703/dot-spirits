@@ -1,6 +1,7 @@
 import { PNG } from 'pngjs';
 import { createWhitePng, drawBitmapText, drawRect, measureBitmapText } from './bitmap-font.js';
 import { AGENT_TYPES } from './constants.js';
+import { getStateDisplayLabel, normalizeDisplayText } from './display-format.js';
 
 const SCALE = 2;
 const DASHBOARD_TILE_SCALE = 1;
@@ -11,23 +12,6 @@ const DASHBOARD_ROW_HEIGHT = 15;
 const DASHBOARD_ROW_GAP = 3;
 const DASHBOARD_HEADER_HEIGHT = 14;
 const DASHBOARD_MAX_SESSIONS_PER_AGENT = 4;
-
-const STATE_LABELS = Object.freeze({
-  starting: 'START',
-  running: 'RUNNING',
-  waiting_input: 'WAIT',
-  completed: 'DONE',
-  failed: 'FAILED',
-  cancelled: 'STOP'
-});
-
-export function getStateDisplayLabel(state, fallback) {
-  if (fallback) {
-    return String(fallback).toUpperCase();
-  }
-
-  return STATE_LABELS[state] || String(state || '').replaceAll('_', ' ').toUpperCase();
-}
 
 export function composeFrameWithOverlay(imageBuffer, { state, stateLabel, sessionId, sessionName, agentType } = {}) {
   const tag = buildSingleSessionTag({ state, stateLabel, sessionId, sessionName, agentType });
@@ -96,7 +80,7 @@ function drawDashboardColumn(png, { x, y, title, sessions }) {
 
   let cursorY = y + DASHBOARD_HEADER_HEIGHT + DASHBOARD_ROW_GAP;
   for (const session of visibleSessions) {
-    const text = `${normalizeDashboardText(session.sessionName || session.sessionId, 4)}:${compactStateLabel(session.state, session.stateLabel)}`;
+    const text = `${normalizeDisplayText(session.sessionName || session.sessionId, { maxLength: 4 })}:${getStateDisplayLabel(session.state, session.stateLabel, { compact: true })}`;
     drawLabeledBox(png, {
       x,
       y: cursorY,
@@ -154,47 +138,13 @@ function groupDashboardSessions(sessions) {
   return grouped;
 }
 
-function normalizeDashboardText(value, maxLength) {
-  return String(value || '')
-    .trim()
-    .replace(/[^a-zA-Z0-9:_-]+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
-    .toUpperCase()
-    .slice(0, maxLength);
-}
-
-function compactStateLabel(state, fallback) {
-  const label = getStateDisplayLabel(state, fallback);
-  switch (label) {
-    case 'RUNNING':
-      return 'RUN';
-    case 'WAIT':
-    case 'WAITING INPUT':
-      return 'WAIT';
-    case 'DONE':
-    case 'COMPLETED':
-      return 'DONE';
-    case 'FAILED':
-      return 'FAIL';
-    case 'START':
-    case 'STARTING':
-      return 'STRT';
-    case 'STOP':
-    case 'CANCELLED':
-      return 'STOP';
-    default:
-      return normalizeDashboardText(label, 4);
-  }
-}
-
 function buildSingleSessionTag({ state, stateLabel, sessionId, sessionName, agentType }) {
   if (!sessionId && !sessionName && !agentType && !state && !stateLabel) {
     return null;
   }
   const agent = agentType === AGENT_TYPES.CLAUDE_CODE ? 'CLAUDE' : 'CODEX';
-  const name = normalizeDashboardText(sessionName || sessionId, 4);
-  const compactState = compactStateLabel(state, stateLabel);
+  const name = normalizeDisplayText(sessionName || sessionId, { maxLength: 4 });
+  const compactState = getStateDisplayLabel(state, stateLabel, { compact: true });
   return {
     agent,
     detail: name ? `${name}:${compactState}` : compactState

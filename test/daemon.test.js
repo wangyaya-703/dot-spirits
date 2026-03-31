@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { RUN_STATES } from '../src/lib/constants.js';
 import {
   selectNextSession,
+  shouldReclaimTakeover,
   shouldDeferRapidActiveStatePush,
   shouldDeferStartingDisplay
 } from '../src/commands/daemon.js';
@@ -263,6 +264,46 @@ test('shouldDeferStartingDisplay stops deferring once the warm-up window is over
   });
 
   assert.equal(deferred, false);
+});
+
+test('shouldReclaimTakeover skips API calls until the reclaim interval elapses', async () => {
+  const client = {
+    calls: 0,
+    async getStatus() {
+      this.calls += 1;
+      return {
+        renderInfo: {
+          current: {
+            image: ['https://example.com/current.png']
+          }
+        }
+      };
+    }
+  };
+  const runtimeState = {
+    lastOwnedImageUrl: 'https://example.com/owned.png',
+    lastReclaimCheckAt: 1_000
+  };
+  const logger = { debug() {}, info() {} };
+
+  const skipped = await shouldReclaimTakeover({
+    client,
+    runtimeState,
+    logger,
+    now: 1_100,
+    minCheckIntervalMs: 500
+  });
+  const checked = await shouldReclaimTakeover({
+    client,
+    runtimeState,
+    logger,
+    now: 1_600,
+    minCheckIntervalMs: 500
+  });
+
+  assert.equal(skipped, false);
+  assert.equal(checked, true);
+  assert.equal(client.calls, 1);
 });
 
 test('shouldDeferStartingDisplay bypasses non-starting states', () => {

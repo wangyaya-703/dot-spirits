@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import { bootstrapRuntime, resolveFramePath } from '../lib/command-helpers.js';
-import { composeFrameWithOverlay, getStateDisplayLabel } from '../lib/frame-overlay.js';
+import { composeFrameWithOverlay } from '../lib/frame-overlay.js';
+import { getStateDisplayLabel } from '../lib/display-format.js';
 
 export async function pushCommand(state, cliOptions) {
   if (!state && !cliOptions.file) {

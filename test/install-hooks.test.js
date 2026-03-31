@@ -12,5 +12,7 @@ test('buildClaudeHooksSnippet includes the expected Claude lifecycle hooks', () 
   assert.match(snippet, /Stop/);
   assert.match(snippet, /report --agent claude-code --event start/);
   assert.match(snippet, /report --agent claude-code --event waiting_input/);
-  assert.match(snippet, /date \+%s%N/);
+  assert.match(snippet, /HOOK_JSON=/);
+  assert.match(snippet, /--session-id/);
+  assert.doesNotMatch(snippet, /date \+%s%N/);
 });

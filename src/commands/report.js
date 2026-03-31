@@ -5,6 +5,9 @@ import { createLogger } from '../lib/logger.js';
 import { SessionRegistry, ensureRotatorRunning } from '../lib/session-registry.js';
 import { AGENT_TYPES, RUN_STATES } from '../lib/constants.js';
 
+const DEFAULT_HOOK_INPUT_TIMEOUT_MS = 5000;
+let fallbackSequenceSeed = 0;
+
 export async function reportCommand(cliOptions) {
   const config = loadConfig({ overrides: cliOptions });
   const logger = createLogger({
@@ -33,7 +36,7 @@ export function buildReportDescriptor({ cliOptions = {}, hookInput = {}, config 
 
   const sessionId = cliOptions.sessionId || hookInput.session_id;
   if (!sessionId) {
-    throw new Error('Missing report session id. Pass --session-id or provide session_id on stdin.');
+    throw new Error('Missing report session id. Pass --session-id or ensure the hook JSON includes session_id on stdin.');
   }
 
   const cwd = cliOptions.cwd || hookInput.cwd || process.cwd();
@@ -112,26 +115,66 @@ export function mapReportEventToState({ eventName, stopReason = '' }) {
   }
 }
 
-async function readHookInput() {
-  if (process.stdin.isTTY) {
+export async function readHookInput({ stdin = process.stdin, timeoutMs = DEFAULT_HOOK_INPUT_TIMEOUT_MS } = {}) {
+  if (stdin.isTTY) {
     return {};
   }
 
-  let raw = '';
-  for await (const chunk of process.stdin) {
-    raw += chunk.toString();
-  }
+  return new Promise((resolve, reject) => {
+    let raw = '';
+    let settled = false;
+    let timer = null;
 
-  const trimmed = raw.trim();
-  if (!trimmed) {
-    return {};
-  }
+    const cleanup = () => {
+      stdin.off?.('data', onData);
+      stdin.off?.('end', onEnd);
+      stdin.off?.('error', onError);
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+    };
 
-  try {
-    return JSON.parse(trimmed);
-  } catch (error) {
-    throw new Error(`Failed to parse hook JSON from stdin: ${error.message}`);
-  }
+    const finish = (callback, value) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      callback(value);
+    };
+
+    const onData = (chunk) => {
+      raw += chunk.toString();
+    };
+
+    const onEnd = () => {
+      const trimmed = raw.trim();
+      if (!trimmed) {
+        finish(resolve, {});
+        return;
+      }
+
+      try {
+        finish(resolve, JSON.parse(trimmed));
+      } catch (error) {
+        finish(reject, new Error(`Failed to parse hook JSON from stdin: ${error.message}`));
+      }
+    };
+
+    const onError = (error) => {
+      finish(reject, error);
+    };
+
+    timer = setTimeout(() => {
+      finish(resolve, {});
+    }, timeoutMs);
+
+    stdin.on('data', onData);
+    stdin.once('end', onEnd);
+    stdin.once('error', onError);
+    stdin.resume?.();
+  });
 }
 
 function normalizeAgentType(agentType) {
@@ -143,9 +186,9 @@ function normalizeAgentType(agentType) {
   throw new Error(`Unsupported agent type: ${agentType}`);
 }
 
-function normalizeSequence(value) {
+export function normalizeSequence(value) {
   if (value === undefined || value === null || value === '') {
-    return Date.now();
+    return generateFallbackSequence();
   }
 
   const numeric = Number(value);
@@ -154,6 +197,13 @@ function normalizeSequence(value) {
   }
 
   return Math.trunc(numeric);
+}
+
+export function generateFallbackSequence(now = Date.now()) {
+  const subMillisecond = Number(process.hrtime.bigint() % 1000n);
+  const candidate = (now * 1000) + subMillisecond;
+  fallbackSequenceSeed = Math.max(candidate, fallbackSequenceSeed + 1);
+  return fallbackSequenceSeed;
 }
 
 function buildCommandArgs({ agentType, eventName, sessionId, sequenceVersion }) {

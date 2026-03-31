@@ -34,10 +34,17 @@ export async function daemonCommand(cliOptions) {
     lastOwnedImageUrl: null,
     runningFrameIndexBySession: new Map(),
     sessionOrderCursor: 0,
-    lastSessionState: null
+    lastSessionState: null,
+    lastReclaimCheckAt: 0
   };
 
+  let cleaned = false;
   const cleanup = () => {
+    if (cleaned) {
+      return;
+    }
+    cleaned = true;
+
     try {
       registry.clearPid();
     } catch (error) {
@@ -166,7 +173,13 @@ export async function daemonCommand(cliOptions) {
       }
 
       const shouldReassertActiveTakeover = state.currentSessionId
-        ? await shouldReclaimTakeover({ client, runtimeState: state, logger })
+        ? await shouldReclaimTakeover({
+            client,
+            runtimeState: state,
+            logger,
+            now,
+            minCheckIntervalMs: Math.max(config.rotatorPollMs, Math.floor(config.takeoverReassertMs / 2))
+          })
         : false;
 
       if (activeSessions.length > 1) {
@@ -544,10 +557,16 @@ async function refreshOwnedRender({ client, runtimeState, logger }) {
   }
 }
 
-async function shouldReclaimTakeover({ client, runtimeState, logger }) {
+export async function shouldReclaimTakeover({ client, runtimeState, logger, now = Date.now(), minCheckIntervalMs = 0 }) {
   if (!runtimeState.lastOwnedImageUrl) {
     return false;
   }
+
+  if (minCheckIntervalMs > 0 && now - (runtimeState.lastReclaimCheckAt || 0) < minCheckIntervalMs) {
+    return false;
+  }
+
+  runtimeState.lastReclaimCheckAt = now;
 
   try {
     const status = await client.getStatus();

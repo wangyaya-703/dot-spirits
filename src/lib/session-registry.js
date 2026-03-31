@@ -4,6 +4,7 @@ import process from 'node:process';
 import { spawn } from 'node:child_process';
 import { ACTIVE_STATES, AGENT_TYPES, RUN_STATES, TERMINAL_STATES } from './constants.js';
 import { getProjectRoot } from './config.js';
+import { getStateDisplayLabel, normalizeDisplayText } from './display-format.js';
 
 export class SessionRegistry {
   constructor({ runtimeRoot, logger }) {
@@ -321,22 +322,7 @@ export function selectPromotableTerminalSession(sessions, {
 }
 
 export function defaultSessionLabel(state) {
-  switch (state) {
-    case RUN_STATES.STARTING:
-      return 'START';
-    case RUN_STATES.RUNNING:
-      return 'RUNNING';
-    case RUN_STATES.WAITING_INPUT:
-      return 'WAIT';
-    case RUN_STATES.COMPLETED:
-      return 'DONE';
-    case RUN_STATES.FAILED:
-      return 'FAILED';
-    case RUN_STATES.CANCELLED:
-      return 'STOP';
-    default:
-      return String(state || '').toUpperCase();
-  }
+  return getStateDisplayLabel(state);
 }
 
 export function pruneExpiredSessions(registry, sessions, {
@@ -405,19 +391,10 @@ function isSessionFresh(session, {
 
 export function getSessionDisplayName(session, { maxLength = 12 } = {}) {
   const preferred = session?.sessionName || session?.sessionId || '';
-  const normalized = String(preferred)
-    .trim()
-    .replace(/[^a-zA-Z0-9:_-]+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
-    .toUpperCase();
+  const normalized = normalizeDisplayText(preferred);
 
   if (!normalized) {
     return session?.sessionId ? String(session.sessionId).toUpperCase() : '';
-  }
-
-  if (!session?.sessionName || normalized === String(session.sessionId || '').toUpperCase()) {
-    return normalized.slice(0, maxLength);
   }
 
   return normalized.slice(0, maxLength);
