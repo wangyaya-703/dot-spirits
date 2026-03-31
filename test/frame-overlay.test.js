@@ -42,8 +42,8 @@ test('composeDashboardFrame renders a multi-session summary board', () => {
 test('composeDashboardFrame preserves a supplied background image above the session panel', () => {
   const base = new PNG({ width: 296, height: 152 });
   base.data.fill(255);
-  for (let y = 0; y < 70; y += 1) {
-    for (let x = 0; x < 70; x += 1) {
+  for (let y = 70; y < 120; y += 1) {
+    for (let x = 110; x < 170; x += 1) {
       const index = (base.width * y + x) * 4;
       base.data[index] = 0;
       base.data[index + 1] = 0;
@@ -61,8 +61,8 @@ test('composeDashboardFrame preserves a supplied background image above the sess
   });
 
   const png = PNG.sync.read(composed);
-  const topLeftIndex = 0;
-  assert.equal(png.data[topLeftIndex], 0);
-  assert.equal(png.data[topLeftIndex + 1], 0);
-  assert.equal(png.data[topLeftIndex + 2], 0);
+  const centerIndex = (png.width * 90 + 130) * 4;
+  assert.equal(png.data[centerIndex], 0);
+  assert.equal(png.data[centerIndex + 1], 0);
+  assert.equal(png.data[centerIndex + 2], 0);
 });
