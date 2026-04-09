@@ -1,14 +1,14 @@
 {
-  "name": "dot-codex",
+  "name": "dot-spirits",
   "version": "0.1.0",
-  "description": "Quote/0 Codex status bridge for Dot.",
+  "description": "Sync Codex and Claude Code session states to a Quote/0 Dot E-Ink device.",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/wangyaya-703/dot-codex.git"
+    "url": "git+https://github.com/wangyaya-703/dot-spirits.git"
   },
-  "homepage": "https://github.com/wangyaya-703/dot-codex#readme",
+  "homepage": "https://github.com/wangyaya-703/dot-spirits#readme",
   "bugs": {
-    "url": "https://github.com/wangyaya-703/dot-codex/issues"
+    "url": "https://github.com/wangyaya-703/dot-spirits/issues"
   },
   "main": "src/cli.js",
   "scripts": {
